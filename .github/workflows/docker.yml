@@ -35,4 +35,4 @@ jobs:
         tags: |
           ghcr.io/souramoo/party:latest
         push: ${{ github.ref == 'refs/heads/master' }}
-        platforms: linux/amd64
+        platforms: linux/amd64, linux/arm64
