@@ -33,6 +33,12 @@ export class Rtc {
     this.calls = new Map();   // socketId -> { call, video, source, panner, since }
     this.pending = new Map(); // socketId -> when we started dialing them
 
+    // screen sharing: outgoing one-way "screen" calls when presenting,
+    // and boards we're receiving from presenters in range
+    this.screenStream = null;
+    this.screenCalls = new Map();   // socketId -> outgoing screen call
+    this.remoteScreens = new Map(); // socketId -> { call, video }
+
     this.voiceGain = ctx.createGain();
     this.voiceGain.gain.value = 1;
     this.voiceGain.connect(ctx.destination);
@@ -42,8 +48,10 @@ export class Rtc {
     this.mediaHolder.style.cssText = 'position:fixed;width:0;height:0;overflow:hidden;';
     document.body.appendChild(this.mediaHolder);
 
-    this.onVideo = null;    // (socketId, videoElement)
-    this.onVideoEnd = null; // (socketId)
+    this.onVideo = null;     // (socketId, videoElement)
+    this.onVideoEnd = null;  // (socketId)
+    this.onScreen = null;    // (socketId, videoElement) — they started presenting
+    this.onScreenEnd = null; // (socketId)
   }
 
   /** @param {MediaStream|null} stream local cam/mic (null = spectator) */
@@ -54,6 +62,11 @@ export class Rtc {
       config: { iceServers: ICE_SERVERS },
     });
     this.peer.on('call', (call) => {
+      if (call.metadata && call.metadata.type === 'screen') {
+        call.answer(); // one-way: we just watch
+        this._wireIncomingScreen(call);
+        return;
+      }
       call.answer(this.myStream);
       this._wireCall(call);
     });
@@ -139,6 +152,13 @@ export class Rtc {
 
   hangUp(socketId) {
     this.pending.delete(socketId);
+    // drop any presentation traffic with this peer too
+    const screenCall = this.screenCalls.get(socketId);
+    if (screenCall) {
+      this.screenCalls.delete(socketId);
+      try { screenCall.close(); } catch { /* already closed */ }
+    }
+    this._closeRemoteScreen(socketId);
     const entry = this.calls.get(socketId);
     if (!entry) return;
     this.calls.delete(socketId);
@@ -170,14 +190,31 @@ export class Rtc {
     const seen = new Set();
     for (const { id, distance } of others) {
       seen.add(id);
-      if (distance < CALL_DISTANCE) this.call(id);
-      else if (distance > HANGUP_DISTANCE) this.hangUp(id);
+      if (distance < CALL_DISTANCE) {
+        this.call(id);
+        if (this.screenStream) this._dialScreen(id);
+      } else if (distance > HANGUP_DISTANCE) {
+        this.hangUp(id);
+      }
     }
     for (const id of [...this.calls.keys()]) {
       if (!seen.has(id)) this.hangUp(id);
     }
     for (const id of [...this.pending.keys()]) {
       if (!seen.has(id)) this.pending.delete(id);
+    }
+
+    // presentation boards follow the same range rules as voice
+    for (const [id, call] of [...this.screenCalls]) {
+      const o = others.find((m) => m.id === id);
+      if (!o || o.distance > HANGUP_DISTANCE) {
+        try { call.close(); } catch { /* already closed */ }
+        this.screenCalls.delete(id);
+      }
+    }
+    for (const id of [...this.remoteScreens.keys()]) {
+      const o = others.find((m) => m.id === id);
+      if (!o || o.distance > HANGUP_DISTANCE) this._closeRemoteScreen(id);
     }
   }
 
@@ -209,6 +246,74 @@ export class Rtc {
     }
   }
 
+  // ----------------------------------------------------------
+  // Screen sharing ("presenting")
+  // ----------------------------------------------------------
+
+  startScreenShare(stream) {
+    this.screenStream = stream;
+    // people already in a voice call see the board immediately;
+    // anyone walking into range later is dialed by updateProximity
+    for (const id of this.calls.keys()) this._dialScreen(id);
+  }
+
+  stopScreenShare() {
+    this.screenStream = null;
+    for (const call of this.screenCalls.values()) {
+      try { call.close(); } catch { /* already closed */ }
+    }
+    this.screenCalls.clear();
+  }
+
+  _dialScreen(socketId) {
+    if (!this.peer || !this.screenStream || this.screenCalls.has(socketId)) return;
+    const call = this.peer.call(PEER_PREFIX + socketId, this.screenStream, {
+      metadata: { type: 'screen' },
+    });
+    if (!call) return;
+    this.screenCalls.set(socketId, call);
+    call.on('close', () => this.screenCalls.delete(socketId));
+    call.on('error', () => this.screenCalls.delete(socketId));
+  }
+
+  _wireIncomingScreen(call) {
+    const id = this._socketIdOf(call);
+    this._closeRemoteScreen(id); // a fresh share replaces the old board
+    const entry = { call, video: null };
+    this.remoteScreens.set(id, entry);
+
+    call.on('stream', (remote) => {
+      if (this.remoteScreens.get(id) !== entry || entry.video) return;
+      const video = document.createElement('video');
+      video.muted = true;
+      video.autoplay = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.srcObject = remote;
+      this.mediaHolder.appendChild(video);
+      video.play().catch(() => {});
+      entry.video = video;
+      this.onScreen?.(id, video);
+    });
+    const end = () => {
+      if (this.remoteScreens.get(id) === entry) this._closeRemoteScreen(id);
+    };
+    call.on('close', end);
+    call.on('error', end);
+  }
+
+  _closeRemoteScreen(id) {
+    const entry = this.remoteScreens.get(id);
+    if (!entry) return;
+    this.remoteScreens.delete(id);
+    try { entry.call.close(); } catch { /* already closed */ }
+    if (entry.video) {
+      entry.video.srcObject = null;
+      entry.video.remove();
+    }
+    this.onScreenEnd?.(id);
+  }
+
   /** Swap the outgoing video track on every live call (camera switch). */
   replaceVideoTrack(track) {
     for (const { call } of this.calls.values()) {
@@ -223,6 +328,8 @@ export class Rtc {
   }
 
   dispose() {
+    this.stopScreenShare();
+    for (const id of [...this.remoteScreens.keys()]) this._closeRemoteScreen(id);
     for (const id of [...this.calls.keys()]) this.hangUp(id);
     this.peer?.destroy();
   }

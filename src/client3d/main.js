@@ -300,6 +300,43 @@ class Game {
     this.camBtn.addEventListener('click', () => this.toggleCam());
     this.switchingCam = false;
     document.getElementById('btn-switch-cam').addEventListener('click', () => this.switchCamera());
+    this.screenBtn = document.getElementById('btn-screen');
+    this.screenStream = null;
+    this.screenBtn.addEventListener('click', () => this.toggleScreenShare());
+  }
+
+  /** Present your screen on a board next to your avatar. */
+  async toggleScreenShare() {
+    if (this.screenStream) { this.stopScreenShare(); return; }
+    if (this.state !== 'playing' && this.state !== 'paused') return;
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      this.ui.showToast('Screen sharing is not supported in this browser');
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { width: { max: 1280 }, height: { max: 720 }, frameRate: { max: 15 } },
+        audio: false,
+      });
+      this.screenStream = stream;
+      // the browser's own "stop sharing" bar ends the track
+      stream.getVideoTracks()[0].addEventListener('ended', () => this.stopScreenShare());
+      this.rtc?.startScreenShare(stream);
+      this.screenBtn.classList.add('live');
+      this.ui.showToast('Presenting — people nearby can see your screen');
+    } catch (err) {
+      console.warn('[media] screen share', err);
+      this.ui.showToast('Screen share cancelled');
+    }
+  }
+
+  stopScreenShare() {
+    if (!this.screenStream) return;
+    for (const t of this.screenStream.getTracks()) t.stop();
+    this.screenStream = null;
+    this.rtc?.stopScreenShare();
+    this.screenBtn.classList.remove('live');
+    this.ui.showToast('Stopped presenting');
   }
 
   /** Cycle to the next video input device (front/back camera, webcams…). */
@@ -462,7 +499,10 @@ class Game {
     this.rtc = new Rtc(this.audio.ctx);
     this.rtc.onVideo = (id, video) => this.avatars.setVideo(id, video);
     this.rtc.onVideoEnd = (id) => this.avatars.clearVideo(id);
+    this.rtc.onScreen = (id, video) => this.avatars.setScreen(id, video);
+    this.rtc.onScreenEnd = (id) => this.avatars.clearScreen(id);
     this.rtc.init(this.net.id, this.localStream);
+    if (this.screenStream) this.rtc.startScreenShare(this.screenStream);
   }
 
   sendStateNow() {
@@ -723,6 +763,9 @@ class Game {
           break;
         case 'KeyC':
           this.switchCamera();
+          break;
+        case 'KeyP':
+          this.toggleScreenShare();
           break;
         case 'KeyT':
         case 'Enter':

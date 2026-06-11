@@ -165,6 +165,9 @@ class Avatar {
     this.bubble = null;
     this._chatTimer = 0;
 
+    // ---- presentation board (screen share) ----
+    this.screen = null;
+
     // ---- motion state ----
     this.target = new THREE.Vector3();
     this.targetYaw = 0;
@@ -215,6 +218,65 @@ class Avatar {
     this.faceMat.needsUpdate = true;
   }
 
+  /**
+   * Show a screen share as a slideshow board standing beside the avatar
+   * (to their right, facing the same way they face — audience in front
+   * of the presenter sees both them and the slides).
+   */
+  setScreen(videoEl) {
+    this.clearScreen();
+    const W = 2.4, H = 1.35; // 16:9-ish board
+
+    const tex = new THREE.VideoTexture(videoEl);
+    tex.colorSpace = THREE.SRGBColorSpace;
+
+    const group = new THREE.Group();
+    const frameMat = new THREE.MeshBasicMaterial({ color: 0x2b2620 });
+    const centerY = 1.45;
+
+    const frame = new THREE.Mesh(new THREE.BoxGeometry(W + 0.14, H + 0.14, 0.07), frameMat);
+    frame.position.y = centerY;
+    group.add(frame);
+
+    const screenMat = new THREE.MeshBasicMaterial({ map: tex });
+    const plane = new THREE.Mesh(new THREE.PlaneGeometry(W, H), screenMat);
+    plane.position.set(0, centerY, -0.04);
+    plane.rotation.y = Math.PI; // face -Z, same way the avatar faces
+    group.add(plane);
+
+    // easel legs down to the ground
+    const legH = centerY - H / 2;
+    for (const side of [-1, 1]) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.07, legH + 0.05, 0.07), frameMat);
+      leg.position.set(side * (W / 2 - 0.1), legH / 2, 0);
+      group.add(leg);
+    }
+
+    group.position.set(1.9, 0, 0); // beside the avatar (their right)
+    this.group.add(group);
+    this.screen = { group, tex, screenMat, frameMat };
+
+    // match the real aspect ratio once the stream reports it
+    videoEl.addEventListener('loadedmetadata', () => {
+      if (this.screen?.tex !== tex) return;
+      if (!videoEl.videoWidth || !videoEl.videoHeight) return;
+      const aspect = videoEl.videoWidth / videoEl.videoHeight;
+      const sx = Math.min(1.25, Math.max(0.6, aspect / (W / H)));
+      plane.scale.x = sx;
+      frame.scale.x = sx;
+    }, { once: true });
+  }
+
+  clearScreen() {
+    if (!this.screen) return;
+    this.group.remove(this.screen.group);
+    this.screen.tex.dispose();
+    this.screen.screenMat.dispose();
+    this.screen.frameMat.dispose();
+    this.screen.group.traverse((o) => o.geometry?.dispose());
+    this.screen = null;
+  }
+
   setChat(text) {
     this.clearChat();
     this.bubble = chatSprite(text);
@@ -253,6 +315,7 @@ class Avatar {
   dispose() {
     this.clearVideo();
     this.clearChat();
+    this.clearScreen();
     this.group.parent?.remove(this.group);
   }
 }
@@ -286,6 +349,8 @@ export class Avatars {
   setVideo(id, videoEl) { this.map.get(id)?.setVideo(videoEl); }
   clearVideo(id) { this.map.get(id)?.clearVideo(); }
   setChat(id, text) { this.map.get(id)?.setChat(text); }
+  setScreen(id, videoEl) { this.map.get(id)?.setScreen(videoEl); }
+  clearScreen(id) { this.map.get(id)?.clearScreen(); }
 
   remove(id) {
     const a = this.map.get(id);

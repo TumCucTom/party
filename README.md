@@ -35,6 +35,9 @@ voxel engine from [Fable5-mc](https://github.com/souramoo/Fable5-mc)):
 - **Minimap** — a north-up radar in the corner with height-shaded terrain,
   your view arrow, and a colored dot per player (clamped to the edge when
   they're far) so you can always find people.
+- **Screen sharing** — press `P` (or 🖥️) to present: your screen appears on a
+  slideshow board standing next to your avatar, visible to everyone in voice
+  range, like presenting at a real meetup.
 - **A full voxel sandbox** — infinite procedural terrain with biomes, caves and
   ores, a day/night cycle (shared per room), mining and placing with 35 block
   types, falling sand, TNT (synchronized explosions!), swimming, sprinting,
