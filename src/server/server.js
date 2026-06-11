@@ -1,15 +1,20 @@
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
-const webpack = require('webpack');
-const webpackDevMiddleware = require('webpack-dev-middleware');
 const socketio = require('socket.io');
 
 const Constants = require('../shared/constants');
 const Game = require('./game');
-const webpackConfig = require('../../webpack.dev.js');
+const { World3D } = require('./world3d');
 
 // Setup an Express server
 const app = express();
+
+// Block Party (the 3D world) is the default experience; the classic 2D
+// landing page remains reachable at /index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client3d/index.html'));
+});
 
 // This lets us go to /join not /join.html
 const publicdir = `${__dirname}/../../dist`;
@@ -24,8 +29,21 @@ app.use((req, res, next) => {
 });
 app.use(express.static('public'));
 
+// The 3D world client (/world) is served as native ES modules — no build
+// step. Its two runtime dependencies are vendored straight from node_modules.
+app.use('/world', express.static(path.join(__dirname, '../client3d')));
+app.use('/vendor/three', express.static(path.join(__dirname, '../../node_modules/three/build')));
+app.use('/vendor/peerjs', express.static(path.join(__dirname, '../../node_modules/peerjs/dist')));
+
 if (process.env.NODE_ENV === 'development') {
-  // Setup Webpack for development
+  // Setup Webpack for development (required lazily so production
+  // doesn't need to load the webpack toolchain to boot)
+  // eslint-disable-next-line global-require
+  const webpack = require('webpack');
+  // eslint-disable-next-line global-require
+  const webpackDevMiddleware = require('webpack-dev-middleware');
+  // eslint-disable-next-line global-require
+  const webpackConfig = require('../../webpack.dev.js');
   const compiler = webpack(webpackConfig);
   app.use(webpackDevMiddleware(compiler, { writeToDisk: true }));
 } else {
@@ -41,8 +59,13 @@ console.log(`Server listening on port ${port}`);
 // Setup socket.io
 const io = socketio(server);
 
-// Setup the Game
+// Setup the Game (classic 2D) and the voxel world (3D).
+// Worlds persist to disk so builds survive restarts (override the
+// location with WORLD3D_FILE, e.g. a mounted volume in docker).
+const world3dFile = process.env.WORLD3D_FILE ||
+  path.join(__dirname, '../../data/world3d.json');
 const game = new Game();
+const world3d = new World3D(io, { file: world3dFile });
 
 // Listen for socket.io connections
 io.on('connection', socket => {
@@ -52,6 +75,8 @@ io.on('connection', socket => {
   socket.on(Constants.MSG_TYPES.INPUT, handleInput);
   socket.on(Constants.MSG_TYPES.EMOTE, handleEmote);
   socket.on('disconnect', onDisconnect);
+
+  world3d.attach(socket);
 });
 
 function joinGame(joinData) {
@@ -72,6 +97,11 @@ function onDisconnect() {
   this.broadcast.emit(Constants.MSG_TYPES.BRDCST_PLAYER_LEFT, this.id);
   console.log(`Player left! ${this.id}`);
 }
+
+// live room snapshot for the join screen (who's in there, how built it is)
+app.get('/world-info/:room', (req, res) => {
+  res.json(world3d.roomInfo(req.params.room));
+});
 
 // return photo
 app.get('/photo/:id', (req, res) => {

@@ -87,3 +87,6 @@ typings/
 # Added by me
 .DS_Store
 dist/
+
+# 3D world persistence
+data/
