@@ -10,6 +10,12 @@ const { World3D } = require('./world3d');
 // Setup an Express server
 const app = express();
 
+// Block Party (the 3D world) is the default experience; the classic 2D
+// landing page remains reachable at /index.html
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, '../client3d/index.html'));
+});
+
 // This lets us go to /join not /join.html
 const publicdir = `${__dirname}/../../dist`;
 app.use((req, res, next) => {
@@ -53,9 +59,13 @@ console.log(`Server listening on port ${port}`);
 // Setup socket.io
 const io = socketio(server);
 
-// Setup the Game (classic 2D) and the voxel world (3D)
+// Setup the Game (classic 2D) and the voxel world (3D).
+// Worlds persist to disk so builds survive restarts (override the
+// location with WORLD3D_FILE, e.g. a mounted volume in docker).
+const world3dFile = process.env.WORLD3D_FILE ||
+  path.join(__dirname, '../../data/world3d.json');
 const game = new Game();
-const world3d = new World3D(io);
+const world3d = new World3D(io, { file: world3dFile });
 
 // Listen for socket.io connections
 io.on('connection', socket => {
@@ -87,6 +97,11 @@ function onDisconnect() {
   this.broadcast.emit(Constants.MSG_TYPES.BRDCST_PLAYER_LEFT, this.id);
   console.log(`Player left! ${this.id}`);
 }
+
+// live room snapshot for the join screen (who's in there, how built it is)
+app.get('/world-info/:room', (req, res) => {
+  res.json(world3d.roomInfo(req.params.room));
+});
 
 // return photo
 app.get('/photo/:id', (req, res) => {

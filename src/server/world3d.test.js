@@ -1,3 +1,6 @@
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
 const { World3D, hashString, sanitizeRoom, sanitizeName } = require('./world3d');
 const Constants = require('../shared/constants');
 
@@ -188,6 +191,43 @@ describe('text chat', () => {
     w.chat(s1, { text: 'one' });
     w.chat(s1, { text: 'two' }); // immediately after → dropped
     expect(s1.broadcast.filter(b => b[1] === MSG.CHAT)).toHaveLength(1);
+  });
+});
+
+describe('persistence & room info', () => {
+  test('worlds survive a restart via the save file', () => {
+    const file = path.join(os.tmpdir(), `w3d-test-${Date.now()}-${Math.random()}.json`);
+    const w1 = new World3D({}, { sweepIntervalMs: 0, file, saveIntervalMs: 0 });
+    const s1 = mockSocket('aaa');
+    w1.join(s1, { room: 'castle', name: 'A' });
+    w1.block(s1, { x: 5, y: 70, z: 5, id: 20 });
+    const { createdAt } = w1.rooms.get('castle');
+    w1.save();
+
+    const w2 = new World3D({}, { sweepIntervalMs: 0, file, saveIntervalMs: 0 });
+    expect(w2.rooms.has('castle')).toBe(true);
+    expect(w2.rooms.get('castle').createdAt).toBe(createdAt); // day clock survives
+    const s2 = mockSocket('bbb');
+    w2.join(s2, { room: 'castle', name: 'B' });
+    expect(s2.lastEmitted(MSG.INIT).edits).toContainEqual([5, 70, 5, 20]);
+    fs.unlinkSync(file);
+  });
+
+  test('save is skipped when nothing changed', () => {
+    const file = path.join(os.tmpdir(), `w3d-test2-${Date.now()}-${Math.random()}.json`);
+    const w = new World3D({}, { sweepIntervalMs: 0, file, saveIntervalMs: 0 });
+    w.save();
+    expect(fs.existsSync(file)).toBe(false); // not dirty → no write
+  });
+
+  test('roomInfo reports players and edit count for the join screen', () => {
+    const w = makeWorld();
+    expect(w.roomInfo('nowhere')).toEqual({ exists: false, players: [], edits: 0 });
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'plaza', name: 'Ann' });
+    w.block(s1, { x: 0, y: 64, z: 0, id: 1 });
+    // lookup goes through the same sanitizer as joining
+    expect(w.roomInfo('PLAZA!')).toEqual({ exists: true, players: ['Ann'], edits: 1 });
   });
 });
 

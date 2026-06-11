@@ -11,7 +11,8 @@
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet" />
-<link rel="stylesheet" href="./style.css" />
+<!-- absolute URLs: this page is served at both / and /world/ -->
+<link rel="stylesheet" href="/world/style.css" />
 <script src="/socket.io/socket.io.js"></script>
 <script src="/vendor/peerjs/peerjs.min.js"></script>
 <script type="importmap">
@@ -34,6 +35,7 @@
   <div id="underwater-overlay"></div>
   <div id="damage-vignette"></div>
   <div id="room-status"></div>
+  <canvas id="minimap" width="148" height="148"></canvas>
   <div id="chat-bar" class="hidden">
     <span>💬</span>
     <input id="chat-input" type="text" maxlength="120" spellcheck="false" autocomplete="off"
@@ -47,6 +49,7 @@
   <div id="self-buttons">
     <button id="btn-mic" class="av-button" title="Toggle microphone (M)">🎙️</button>
     <button id="btn-cam" class="av-button" title="Toggle camera (V)">📷</button>
+    <button id="btn-switch-cam" class="av-button" title="Switch camera (C)">🔄</button>
   </div>
 </div>
 
@@ -75,6 +78,7 @@
         <input id="name-input" type="text" maxlength="16" placeholder="Steve" spellcheck="false" autocomplete="off" />
         <label for="room-input">ROOM CODE <span class="field-hint">(same room = same world)</span></label>
         <input id="room-input" type="text" maxlength="32" value="public" spellcheck="false" autocomplete="off" />
+        <div id="room-info"></div>
         <button class="mc-button" id="btn-play">Join World</button>
         <button class="mc-button small" id="btn-title-controls">Controls</button>
         <div id="join-status"></div>
@@ -135,6 +139,7 @@
       <span>Talk to someone</span><span>WALK UP TO THEM</span>
       <span>Text chat</span><span>T or ENTER</span>
       <span>Mute mic / camera</span><span>M / V</span>
+      <span>Switch camera</span><span>C</span>
       <span>Jump / Swim up</span><span>SPACE</span>
       <span>Sneak (edge-safe)</span><span>SHIFT</span>
       <span>Sprint</span><span>CTRL or double-tap W</span>
@@ -164,6 +169,6 @@
   <div class="menu-stack"><div class="menu-title">WebGL is not available in this browser :(</div></div>
 </div>
 
-<script type="module" src="./main.js"></script>
+<script type="module" src="/world/main.js"></script>
 </body>
 </html>

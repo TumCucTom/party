@@ -27,6 +27,7 @@ import { Net } from './net.js';
 import { Rtc } from './rtc.js';
 import { Avatars } from './avatar.js';
 import { TouchControls, isTouchDevice } from './touch.js';
+import { Minimap } from './minimap.js';
 import { STATE_SEND_HZ, CALL_DISTANCE } from './constants.js';
 
 const SETTINGS_KEY = 'party3d:settings';
@@ -153,6 +154,7 @@ class Game {
 
     // ---------- multiplayer ----------
     this.avatars = new Avatars(this.scene);
+    this.minimap = new Minimap(document.getElementById('minimap'));
     this.net = new Net();
     this.rtc = null;             // created after join (needs the AudioContext)
     this.localStream = null;     // cam + mic, requested below
@@ -245,6 +247,16 @@ class Game {
     if (savedName) document.getElementById('name-input').value = savedName;
     if (window.location.hash.length > 1) this.ui.setJoinRoom(window.location.hash.slice(1));
 
+    // live preview of the room you're about to join (who's there, how built)
+    this._roomInfoSeq = 0;
+    this._roomInfoDebounce = 0;
+    document.getElementById('room-input').addEventListener('input', () => {
+      clearTimeout(this._roomInfoDebounce);
+      this._roomInfoDebounce = setTimeout(() => this.refreshRoomInfo(), 350);
+    });
+    this.refreshRoomInfo();
+    setInterval(() => { if (this.state === 'title') this.refreshRoomInfo(); }, 4000);
+
     this.bindInput();
     this.lastT = performance.now();
     this._rafPending = false;
@@ -286,6 +298,47 @@ class Game {
     this.camBtn = document.getElementById('btn-cam');
     this.micBtn.addEventListener('click', () => this.toggleMic());
     this.camBtn.addEventListener('click', () => this.toggleCam());
+    this.switchingCam = false;
+    document.getElementById('btn-switch-cam').addEventListener('click', () => this.switchCamera());
+  }
+
+  /** Cycle to the next video input device (front/back camera, webcams…). */
+  async switchCamera() {
+    if (this.switchingCam) return;
+    const current = this.localStream?.getVideoTracks()[0];
+    if (!current) { this.ui.showToast('No camera available'); return; }
+    this.switchingCam = true;
+    try {
+      const devices = (await navigator.mediaDevices.enumerateDevices())
+        .filter((d) => d.kind === 'videoinput');
+      if (devices.length < 2) {
+        this.ui.showToast('Only one camera found');
+        return;
+      }
+      const curId = current.getSettings().deviceId;
+      const idx = devices.findIndex((d) => d.deviceId === curId);
+      const next = devices[(idx + 1) % devices.length];
+
+      const fresh = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: next.deviceId }, width: { ideal: 320 }, height: { ideal: 240 } },
+      });
+      const newTrack = fresh.getVideoTracks()[0];
+      newTrack.enabled = current.enabled; // keep the mute state
+
+      this.localStream.removeTrack(current);
+      current.stop();
+      this.localStream.addTrack(newTrack);
+      // re-attach so the previews pick up the new track everywhere
+      document.getElementById('self-video').srcObject = this.localStream;
+      document.getElementById('join-cam').srcObject = this.localStream;
+      this.rtc?.replaceVideoTrack(newTrack);
+      this.ui.showToast(`Camera: ${next.label || `#${((idx + 1) % devices.length) + 1}`}`);
+    } catch (err) {
+      console.warn('[media] switch camera failed', err);
+      this.ui.showToast('Could not switch camera');
+    } finally {
+      this.switchingCam = false;
+    }
   }
 
   toggleMic() {
@@ -353,6 +406,28 @@ class Game {
       this.rtc?.dispose();
       this.ui.showDisconnected();
     };
+  }
+
+  async refreshRoomInfo() {
+    if (this.state !== 'title') return;
+    const room = this.ui.getJoinRoom().toLowerCase().replace(/[^a-z0-9_-]/g, '') || 'public';
+    const seq = ++this._roomInfoSeq;
+    try {
+      const res = await fetch(`/world-info/${encodeURIComponent(room)}`);
+      const info = await res.json();
+      if (seq !== this._roomInfoSeq || this.state !== 'title') return; // stale
+      if (!info.exists) {
+        this.ui.setRoomInfo('✨ a fresh, untouched world awaits');
+      } else {
+        const n = info.players.length;
+        const who = n
+          ? `👥 ${n} ${n === 1 ? 'person' : 'people'} here now: ${info.players.slice(0, 4).join(', ')}${n > 4 ? '…' : ''}`
+          : '👥 nobody here right now';
+        this.ui.setRoomInfo(`${who} · 🧱 ${info.edits} block ${info.edits === 1 ? 'edit' : 'edits'}`);
+      }
+    } catch {
+      if (seq === this._roomInfoSeq) this.ui.setRoomInfo('');
+    }
   }
 
   join() {
@@ -435,6 +510,8 @@ class Game {
         this.rtc.setPeerPosition(a.id, _headPos);
       }
     }
+
+    this.minimap.update(dt, this.player, this.avatars);
   }
 
   // ============================================================
@@ -486,6 +563,7 @@ class Game {
     this.world.onEdit = (x, y, z, id) => this.net.sendBlock(x, y, z, id);
     this.entities.setWorld(this.world);
 
+    this.minimap.setWorld(this.world);
     this.player = new Player(this.world);
     this.spawn = this.world.gen.findSpawn();
     // scatter players around the spawn so a full room doesn't stack up
@@ -642,6 +720,9 @@ class Game {
           break;
         case 'KeyV':
           this.toggleCam();
+          break;
+        case 'KeyC':
+          this.switchCamera();
           break;
         case 'KeyT':
         case 'Enter':

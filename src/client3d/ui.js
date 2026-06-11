@@ -147,6 +147,10 @@ export class UI {
     this.$('join-cam-status').textContent = text;
   }
 
+  setRoomInfo(text) {
+    this.$('room-info').textContent = text;
+  }
+
   setRoomStatus(text) {
     this.$('room-status').textContent = text;
   }

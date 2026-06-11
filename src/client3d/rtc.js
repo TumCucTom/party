@@ -209,6 +209,19 @@ export class Rtc {
     }
   }
 
+  /** Swap the outgoing video track on every live call (camera switch). */
+  replaceVideoTrack(track) {
+    for (const { call } of this.calls.values()) {
+      const pc = call.peerConnection;
+      if (!pc) continue;
+      for (const sender of pc.getSenders()) {
+        if (sender.track && sender.track.kind === 'video') {
+          sender.replaceTrack(track).catch((e) => console.warn('[rtc] replaceTrack', e));
+        }
+      }
+    }
+  }
+
   dispose() {
     for (const id of [...this.calls.keys()]) this.hangUp(id);
     this.peer?.destroy();

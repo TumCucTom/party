@@ -685,3 +685,31 @@ body.touch #debug { top: 104px; }
   .mc-sublogo { letter-spacing: 3px; }
   .splash { margin-left: 120px; font-size: 20px; }
 }
+
+/* ======================= minimap & room preview ======================= */
+
+#minimap {
+  position: absolute;
+  top: 40px;
+  right: 10px;
+  width: 148px;
+  height: 148px;
+  border: 2px solid rgba(0, 0, 0, 0.8);
+  outline: 2px solid rgba(255, 255, 255, 0.25);
+  background: rgba(12, 12, 12, 0.55);
+  image-rendering: pixelated;
+}
+body.touch #minimap {
+  top: 40px;
+  width: 110px;
+  height: 110px;
+}
+
+#room-info {
+  min-height: 20px;
+  color: #ffd75e;
+  font-size: 17px;
+  text-shadow: 1px 1px 0 #303030;
+  text-align: left;
+  margin: -4px 0 6px;
+}
