@@ -19,6 +19,10 @@ const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
 ];
 
+// flaky-connection recovery: a dial that hasn't produced a media stream
+// after this long is abandoned, so the next proximity tick redials
+const DIAL_RETRY_MS = 8000;
+
 export class Rtc {
   /** @param {AudioContext} ctx shared game AudioContext (already resumed) */
   constructor(ctx) {
@@ -26,8 +30,8 @@ export class Rtc {
     this.peer = null;
     this.myId = null;
     this.myStream = null;
-    this.calls = new Map();   // socketId -> { call, video, source, panner }
-    this.pending = new Set(); // socketIds we are currently dialing
+    this.calls = new Map();   // socketId -> { call, video, source, panner, since }
+    this.pending = new Map(); // socketId -> when we started dialing them
 
     this.voiceGain = ctx.createGain();
     this.voiceGain.gain.value = 1;
@@ -53,7 +57,19 @@ export class Rtc {
       call.answer(this.myStream);
       this._wireCall(call);
     });
-    this.peer.on('error', (err) => console.warn('[rtc]', err.type || err));
+    // lost signalling-server connection (bad network) — reconnect so
+    // future calls can still be placed/answered
+    this.peer.on('disconnected', () => {
+      try { this.peer.reconnect(); } catch { /* destroyed */ }
+    });
+    this.peer.on('error', (err) => {
+      console.warn('[rtc]', err.type || err);
+      if (err.type === 'peer-unavailable') {
+        // their Peer isn't registered (yet) — clear the attempt so we redial
+        const m = new RegExp(`${PEER_PREFIX}(\\S+)`).exec(err.message || '');
+        if (m) this.hangUp(m[1]);
+      }
+    });
   }
 
   /** Valid stream to answer/call with when we have no cam & mic. */
@@ -75,7 +91,7 @@ export class Rtc {
     const id = this._socketIdOf(call);
     const existing = this.calls.get(id);
     if (existing && existing.call !== call) existing.call.close();
-    this.calls.set(id, { call, video: null, source: null, panner: null });
+    this.calls.set(id, { call, video: null, source: null, panner: null, since: Date.now() });
 
     call.on('stream', (remote) => {
       const entry = this.calls.get(id);
@@ -115,7 +131,7 @@ export class Rtc {
   call(socketId) {
     if (!this.peer || this.calls.has(socketId) || this.pending.has(socketId)) return;
     if (this.myId >= socketId) return; // the lower id dials; the other answers
-    this.pending.add(socketId);
+    this.pending.set(socketId, Date.now());
     const call = this.peer.call(PEER_PREFIX + socketId, this.myStream);
     if (!call) { this.pending.delete(socketId); return; }
     this._wireCall(call);
@@ -141,6 +157,16 @@ export class Rtc {
    * @param {Array<{id: string, distance: number}>} others
    */
   updateProximity(others) {
+    // abandon stuck attempts (bad connections, failed signalling) so the
+    // call/hangUp pass below can retry them from scratch
+    const now = Date.now();
+    for (const [id, at] of [...this.pending]) {
+      if (now - at > DIAL_RETRY_MS) this.hangUp(id);
+    }
+    for (const [id, entry] of [...this.calls]) {
+      if (!entry.video && now - entry.since > DIAL_RETRY_MS * 1.5) this.hangUp(id);
+    }
+
     const seen = new Set();
     for (const { id, distance } of others) {
       seen.add(id);
@@ -150,7 +176,7 @@ export class Rtc {
     for (const id of [...this.calls.keys()]) {
       if (!seen.has(id)) this.hangUp(id);
     }
-    for (const id of [...this.pending]) {
+    for (const id of [...this.pending.keys()]) {
       if (!seen.has(id)) this.pending.delete(id);
     }
   }

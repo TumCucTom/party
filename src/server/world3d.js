@@ -83,6 +83,7 @@ class World3D {
     socket.on(MSG.STATE, (msg) => this.state(socket, msg || {}));
     socket.on(MSG.BLOCK, (msg) => this.block(socket, msg || {}));
     socket.on(MSG.TNT, (msg) => this.tnt(socket, msg || {}));
+    socket.on(MSG.CHAT, (msg) => this.chat(socket, msg || {}));
     socket.on('disconnect', () => this.leave(socket));
   }
 
@@ -152,6 +153,20 @@ class World3D {
     if (!r) return;
     if (!Number.isInteger(x) || !Number.isInteger(y) || !Number.isInteger(z)) return;
     socket.to(r.channel()).emit(MSG.TNT, { x, y, z });
+  }
+
+  chat(socket, { text }) {
+    const r = this.roomOf(socket);
+    if (!r) return;
+    const p = r.players.get(socket.id);
+    if (!p || typeof text !== 'string') return;
+    // eslint-disable-next-line no-control-regex
+    const clean = text.replace(/[\x00-\x1f\x7f]/g, ' ').trim().slice(0, 120);
+    if (!clean) return;
+    const now = Date.now();
+    if (p.lastChatAt && now - p.lastChatAt < 750) return; // rate limit
+    p.lastChatAt = now;
+    socket.to(r.channel()).emit(MSG.CHAT, { id: socket.id, text: clean });
   }
 
   leave(socket) {

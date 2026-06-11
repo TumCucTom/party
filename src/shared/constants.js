@@ -23,6 +23,7 @@ module.exports = Object.freeze({
     LEAVE: 'w3:leave',
     BLOCK: 'w3:block',
     TNT: 'w3:tnt',
+    CHAT: 'w3:chat',
   },
   EMOJIS: {
     neutral: '😐',

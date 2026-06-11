@@ -33,14 +33,21 @@
   <div id="debug" class="hidden"></div>
   <div id="underwater-overlay"></div>
   <div id="damage-vignette"></div>
-  <div id="self-view">
-    <video id="self-video" autoplay muted playsinline></video>
-    <div id="self-buttons">
-      <button id="btn-mic" class="av-button" title="Toggle microphone">🎙️</button>
-      <button id="btn-cam" class="av-button" title="Toggle camera">📷</button>
-    </div>
-  </div>
   <div id="room-status"></div>
+  <div id="chat-bar" class="hidden">
+    <span>💬</span>
+    <input id="chat-input" type="text" maxlength="120" spellcheck="false" autocomplete="off"
+           placeholder="press ENTER to send, ESC to cancel" />
+  </div>
+</div>
+
+<!-- outside the HUD so it stays usable while the menu is open -->
+<div id="self-view" class="hidden">
+  <video id="self-video" autoplay muted playsinline></video>
+  <div id="self-buttons">
+    <button id="btn-mic" class="av-button" title="Toggle microphone (M)">🎙️</button>
+    <button id="btn-cam" class="av-button" title="Toggle camera (V)">📷</button>
+  </div>
 </div>
 
 <!-- ======================= Inventory picker ======================= -->
@@ -126,6 +133,8 @@
     <div class="controls-grid">
       <span>Move</span><span>W A S D</span>
       <span>Talk to someone</span><span>WALK UP TO THEM</span>
+      <span>Text chat</span><span>T or ENTER</span>
+      <span>Mute mic / camera</span><span>M / V</span>
       <span>Jump / Swim up</span><span>SPACE</span>
       <span>Sneak (edge-safe)</span><span>SHIFT</span>
       <span>Sprint</span><span>CTRL or double-tap W</span>

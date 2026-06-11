@@ -18,6 +18,7 @@ export class Net {
     this.onPlayerLeave = null;  // (id)
     this.onBlock = null;        // ({ x, y, z, id })
     this.onTnt = null;          // ({ x, y, z })
+    this.onChat = null;         // ({ id, text })
     this.onDisconnect = null;   // ()
   }
 
@@ -32,6 +33,7 @@ export class Net {
     this.socket.on(MSG.LEAVE, (id) => this.onPlayerLeave?.(id));
     this.socket.on(MSG.BLOCK, (msg) => this.onBlock?.(msg));
     this.socket.on(MSG.TNT, (msg) => this.onTnt?.(msg));
+    this.socket.on(MSG.CHAT, (msg) => this.onChat?.(msg));
     this.socket.on('disconnect', () => this.onDisconnect?.());
 
     return new Promise((resolve, reject) => {
@@ -55,5 +57,9 @@ export class Net {
 
   sendTnt(x, y, z) {
     if (this.socket && this.socket.connected) this.socket.emit(MSG.TNT, { x, y, z });
+  }
+
+  sendChat(text) {
+    if (this.socket && this.socket.connected) this.socket.emit(MSG.CHAT, { text });
   }
 }

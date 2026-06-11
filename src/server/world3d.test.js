@@ -157,6 +157,40 @@ describe('player state', () => {
   });
 });
 
+describe('text chat', () => {
+  test('chat is sanitized, trimmed and relayed with the sender id', () => {
+    const w = makeWorld();
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'r', name: 'A' });
+    w.chat(s1, { text: `  hello${String.fromCharCode(0)} there${String.fromCharCode(31)}!  ` });
+    const sent = s1.broadcast.filter(b => b[1] === MSG.CHAT);
+    expect(sent).toHaveLength(1);
+    expect(sent[0][2]).toEqual({ id: 'aaa', text: 'hello  there !' });
+  });
+
+  test('empty, non-string and over-long messages are bounded or dropped', () => {
+    const w = makeWorld();
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'r', name: 'A' });
+    w.chat(s1, { text: '   ' });
+    w.chat(s1, { text: 42 });
+    w.chat(s1, {});
+    expect(s1.broadcast.filter(b => b[1] === MSG.CHAT)).toHaveLength(0);
+    w.chat(s1, { text: 'x'.repeat(500) });
+    const sent = s1.broadcast.filter(b => b[1] === MSG.CHAT);
+    expect(sent[0][2].text).toHaveLength(120);
+  });
+
+  test('rapid messages are rate limited', () => {
+    const w = makeWorld();
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'r', name: 'A' });
+    w.chat(s1, { text: 'one' });
+    w.chat(s1, { text: 'two' }); // immediately after → dropped
+    expect(s1.broadcast.filter(b => b[1] === MSG.CHAT)).toHaveLength(1);
+  });
+});
+
 describe('leaving & cleanup', () => {
   test('leave removes the player and notifies the room', () => {
     const w = makeWorld();

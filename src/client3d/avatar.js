@@ -63,6 +63,52 @@ function nameSprite(name) {
   return sprite;
 }
 
+function chatSprite(text) {
+  // Runescape-style: yellow text with a black outline, word-wrapped
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    if ((line + ' ' + w).trim().length > 26 && line) {
+      lines.push(line);
+      line = w;
+    } else {
+      line = (line + ' ' + w).trim();
+    }
+    if (lines.length === 3) break;
+  }
+  if (line && lines.length < 3) lines.push(line);
+
+  const c = document.createElement('canvas');
+  const g = c.getContext('2d');
+  const font = 'bold 26px monospace';
+  g.font = font;
+  const w = Math.max(...lines.map((l) => g.measureText(l).width)) + 16;
+  const lineH = 32;
+  c.width = Math.ceil(w);
+  c.height = lines.length * lineH + 8;
+  g.font = font;
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  lines.forEach((l, i) => {
+    const y = 4 + lineH * i + lineH / 2;
+    g.lineWidth = 5;
+    g.strokeStyle = '#000';
+    g.strokeText(l, c.width / 2, y);
+    g.fillStyle = '#ffff5e';
+    g.fillText(l, c.width / 2, y);
+  });
+
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, transparent: true, depthTest: false,
+  }));
+  const scale = 0.011;
+  sprite.scale.set(c.width * scale, c.height * scale, 1);
+  return sprite;
+}
+
 class Avatar {
   constructor(id, name) {
     this.id = id;
@@ -115,6 +161,10 @@ class Avatar {
     this.tag.position.y = NECK_Y + HEAD + 0.35;
     this.group.add(this.tag);
 
+    // ---- chat bubble ----
+    this.bubble = null;
+    this._chatTimer = 0;
+
     // ---- motion state ----
     this.target = new THREE.Vector3();
     this.targetYaw = 0;
@@ -165,6 +215,23 @@ class Avatar {
     this.faceMat.needsUpdate = true;
   }
 
+  setChat(text) {
+    this.clearChat();
+    this.bubble = chatSprite(text);
+    this.bubble.position.y = NECK_Y + HEAD + 0.62 + this.bubble.scale.y / 2;
+    this.group.add(this.bubble);
+    this._chatTimer = setTimeout(() => this.clearChat(), 6500);
+  }
+
+  clearChat() {
+    clearTimeout(this._chatTimer);
+    if (!this.bubble) return;
+    this.group.remove(this.bubble);
+    this.bubble.material.map.dispose();
+    this.bubble.material.dispose();
+    this.bubble = null;
+  }
+
   update(dt) {
     const k = Math.min(1, dt * 10);
     this.group.position.lerp(this.target, k);
@@ -185,6 +252,7 @@ class Avatar {
 
   dispose() {
     this.clearVideo();
+    this.clearChat();
     this.group.parent?.remove(this.group);
   }
 }
@@ -217,6 +285,7 @@ export class Avatars {
 
   setVideo(id, videoEl) { this.map.get(id)?.setVideo(videoEl); }
   clearVideo(id) { this.map.get(id)?.clearVideo(); }
+  setChat(id, text) { this.map.get(id)?.setChat(text); }
 
   remove(id) {
     const a = this.map.get(id);

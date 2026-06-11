@@ -13,6 +13,7 @@ export const MSG = {
   LEAVE: 'w3:leave',
   BLOCK: 'w3:block',
   TNT: 'w3:tnt',
+  CHAT: 'w3:chat',
 };
 
 // Voice/video range, in blocks (1 block ≈ 1 metre).

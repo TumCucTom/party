@@ -59,8 +59,17 @@ export class UI {
   // Screens
   // ----------------------------------------------------------
 
-  show(name) { this.screens[name].classList.remove('hidden'); }
-  hide(name) { this.screens[name].classList.add('hidden'); }
+  show(name) {
+    this.screens[name].classList.remove('hidden');
+    // the self-view lives outside the HUD (it must stay clickable over
+    // the pause menu) but follows its visibility
+    if (name === 'hud') this.$('self-view').classList.remove('hidden');
+  }
+
+  hide(name) {
+    this.screens[name].classList.add('hidden');
+    if (name === 'hud') this.$('self-view').classList.add('hidden');
+  }
   hideAllMenus() {
     for (const k of ['title', 'loading', 'pause', 'options', 'controls', 'picker']) this.hide(k);
   }

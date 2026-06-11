@@ -187,6 +187,7 @@ class Game {
     // ---------- game state ----------
     this.state = 'title';
     this.pickerOpen = false;
+    this.chatOpen = false;
     this.locked = false;
     this.keys = new Set();
     this.sprintLatch = false;
@@ -252,18 +253,28 @@ class Game {
       this.ui.setCamStatus('No camera/mic — you can still join and listen!');
     }
 
-    const toggleTrack = (tracks, btn, onIcon, offIcon) => {
-      if (!tracks || !tracks.length) return;
-      tracks[0].enabled = !tracks[0].enabled;
-      btn.textContent = tracks[0].enabled ? onIcon : offIcon;
-      btn.classList.toggle('off', !tracks[0].enabled);
-    };
-    document.getElementById('btn-mic').addEventListener('click', (e) => {
-      toggleTrack(this.localStream?.getAudioTracks(), e.currentTarget, '🎙️', '🔇');
-    });
-    document.getElementById('btn-cam').addEventListener('click', (e) => {
-      toggleTrack(this.localStream?.getVideoTracks(), e.currentTarget, '📷', '🚫');
-    });
+    this.micBtn = document.getElementById('btn-mic');
+    this.camBtn = document.getElementById('btn-cam');
+    this.micBtn.addEventListener('click', () => this.toggleMic());
+    this.camBtn.addEventListener('click', () => this.toggleCam());
+  }
+
+  toggleMic() {
+    const track = this.localStream?.getAudioTracks()[0];
+    if (!track) { this.ui.showToast('No microphone available'); return; }
+    track.enabled = !track.enabled;
+    this.micBtn.textContent = track.enabled ? '🎙️' : '🔇';
+    this.micBtn.classList.toggle('off', !track.enabled);
+    this.ui.showToast(track.enabled ? 'Microphone on' : 'Microphone muted');
+  }
+
+  toggleCam() {
+    const track = this.localStream?.getVideoTracks()[0];
+    if (!track) { this.ui.showToast('No camera available'); return; }
+    track.enabled = !track.enabled;
+    this.camBtn.textContent = track.enabled ? '📷' : '🚫';
+    this.camBtn.classList.toggle('off', !track.enabled);
+    this.ui.showToast(track.enabled ? 'Camera on' : 'Camera off');
   }
 
   // ============================================================
@@ -305,6 +316,8 @@ class Game {
       this.world._applyingRemote = true;
       try { this.entities.igniteTNT(x, y, z); } finally { this.world._applyingRemote = false; }
     };
+
+    this.net.onChat = ({ id, text }) => this.avatars.setChat(id, text);
 
     this.net.onDisconnect = () => {
       if (this.state === 'title') return;
@@ -538,7 +551,9 @@ class Game {
       if (!this.locked) {
         this.mining = false;
         this.rmbHeld = false;
-        if (this.state === 'playing' && !this.pickerOpen) this.pause();
+        // ESC always exits pointer lock; with the chat bar open that just
+        // means "keep typing with a visible cursor", not "pause"
+        if (this.state === 'playing' && !this.pickerOpen && !this.chatOpen) this.pause();
       }
     });
 
@@ -555,6 +570,7 @@ class Game {
 
     document.addEventListener('keydown', (e) => {
       if (this.state === 'title') return; // typing in the join form
+      if (this.chatOpen) return;          // typing in the chat bar
       if (e.repeat) {
         if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
         return;
@@ -581,6 +597,17 @@ class Game {
         case 'KeyF':
           this.player.flying = !this.player.flying;
           this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
+          break;
+        case 'KeyM':
+          this.toggleMic();
+          break;
+        case 'KeyV':
+          this.toggleCam();
+          break;
+        case 'KeyT':
+        case 'Enter':
+          e.preventDefault();
+          this.openChat();
           break;
         case 'Space': {
           e.preventDefault();
@@ -618,6 +645,13 @@ class Game {
       });
     }
 
+    // chat bar
+    document.getElementById('chat-input').addEventListener('keydown', (e) => {
+      e.stopPropagation();
+      if (e.key === 'Enter') { e.preventDefault(); this.closeChat(true); }
+      else if (e.key === 'Escape') this.closeChat(false);
+    });
+
     document.addEventListener('mousemove', (e) => {
       if (!this.locked || this.state !== 'playing') return;
       const sens = (this.settings.sens / 100) * 0.0023;
@@ -628,7 +662,7 @@ class Game {
     });
 
     document.addEventListener('mousedown', (e) => {
-      if (this.state !== 'playing' || this.pickerOpen) return;
+      if (this.state !== 'playing' || this.pickerOpen || this.chatOpen) return;
       if (!this.locked) { this.lockPointer(); return; }
       if (e.button === 0) {
         this.mining = true;
@@ -693,6 +727,35 @@ class Game {
     this.pickerOpen = false;
     this.ui.hide('picker');
     if (relock) this.lockPointer();
+  }
+
+  // ============================================================
+  // Text chat (Runescape-style bubbles above heads)
+  // ============================================================
+
+  openChat() {
+    this.chatOpen = true;
+    this.mining = false;
+    this.rmbHeld = false;
+    this.keys.clear(); // stop walking while typing
+    const input = document.getElementById('chat-input');
+    input.value = '';
+    document.getElementById('chat-bar').classList.remove('hidden');
+    input.focus();
+  }
+
+  closeChat(send) {
+    const input = document.getElementById('chat-input');
+    const text = input.value.trim();
+    if (send && text) {
+      this.net.sendChat(text);
+      this.ui.showToast(`You: ${text}`);
+    }
+    input.value = '';
+    input.blur();
+    document.getElementById('chat-bar').classList.add('hidden');
+    this.chatOpen = false;
+    if (!this.locked && this.state === 'playing') this.lockPointer();
   }
 
   // ============================================================
@@ -1033,7 +1096,7 @@ class Game {
     const p = this.player;
 
     // ---- input snapshot ----
-    const inputActive = !this.pickerOpen && !menuOpen;
+    const inputActive = !this.pickerOpen && !menuOpen && !this.chatOpen;
     const input = {
       forward: inputActive && this.keys.has('KeyW'),
       back: inputActive && this.keys.has('KeyS'),
@@ -1064,7 +1127,7 @@ class Game {
     p.events.length = 0;
 
     // ---- interaction & world streaming ----
-    if (this.locked && !this.pickerOpen && !menuOpen) this.updateInteraction(dt);
+    if (this.locked && !this.pickerOpen && !menuOpen && !this.chatOpen) this.updateInteraction(dt);
     else { this.outline.visible = false; this.crack.visible = false; }
 
     this.world.update(p.pos.x, p.pos.z, 5);
