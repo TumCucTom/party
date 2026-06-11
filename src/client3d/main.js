@@ -26,6 +26,7 @@ import { hashString } from './noise.js';
 import { Net } from './net.js';
 import { Rtc } from './rtc.js';
 import { Avatars } from './avatar.js';
+import { TouchControls, isTouchDevice } from './touch.js';
 import { STATE_SEND_HZ, CALL_DISTANCE } from './constants.js';
 
 const SETTINGS_KEY = 'party3d:settings';
@@ -59,6 +60,7 @@ class Game {
       getSettings: () => this.settings,
       onPickBlock: (id) => this.assignBlock(id),
       onHotbarSelect: (i) => { this.selectSlot(i); },
+      onClosePicker: () => this.closePicker(true),
       onUiClick: () => { this.audio.ensure(); this.audio.click(); },
     });
 
@@ -183,6 +185,33 @@ class Game {
     this.icons = this.makeIcons();
     this.ui.setIcons(this.icons);
     this.ui.updateHotbar(this.hotbar, this.selected);
+
+    // ---------- touch controls (phones / tablets only) ----------
+    this.touchMode = isTouchDevice();
+    this.touch = null;
+    this._touchMinePrev = false;
+    this._touchPlacePrev = false;
+    if (this.touchMode) {
+      document.body.classList.add('touch');
+      this.touch = new TouchControls({
+        onLook: (dx, dy) => this.touchLook(dx, dy),
+        onToggleFly: () => {
+          if (this.state !== 'playing') return;
+          this.player.flying = !this.player.flying;
+          if (this.player.flying) this.player.vel.y = 0;
+          this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
+        },
+        onMenu: () => { if (this.state === 'playing') this.pause(); },
+        onChat: () => {
+          if (this.state === 'playing' && !this.pickerOpen && !this.chatOpen) this.openChat();
+        },
+        onPicker: () => {
+          if (this.state !== 'playing' || this.chatOpen) return;
+          if (this.pickerOpen) this.closePicker(false);
+          else this.openPicker();
+        },
+      });
+    }
 
     // ---------- game state ----------
     this.state = 'title';
@@ -536,7 +565,17 @@ class Game {
   // Input
   // ============================================================
 
+  touchLook(dx, dy) {
+    if (this.state !== 'playing' || this.pickerOpen || this.chatOpen) return;
+    const sens = (this.settings.sens / 100) * 0.0045;
+    this.player.yaw -= dx * sens;
+    this.player.pitch -= dy * sens;
+    const lim = Math.PI / 2 - 0.001;
+    this.player.pitch = Math.max(-lim, Math.min(lim, this.player.pitch));
+  }
+
   lockPointer() {
+    if (this.touchMode) return; // no pointer lock on touch devices
     try {
       const p = this.canvas.requestPointerLock({ unadjustedMovement: true });
       if (p && p.catch) p.catch(() => this.canvas.requestPointerLock());
@@ -1105,8 +1144,36 @@ class Game {
       jump: inputActive && this.keys.has('Space'),
       sneak: inputActive && (this.keys.has('ShiftLeft') || this.keys.has('ShiftRight')),
     };
+    // merge touch input (joystick + on-screen buttons)
+    let touchSprint = false;
+    if (this.touch) {
+      const t = this.touch;
+      if (inputActive) {
+        input.forward = input.forward || t.moveY < -0.25;
+        input.back = input.back || t.moveY > 0.25;
+        input.left = input.left || t.moveX < -0.25;
+        input.right = input.right || t.moveX > 0.25;
+        input.jump = input.jump || t.jump;
+        input.sneak = input.sneak || t.sneak;
+        touchSprint = t.wantsSprint();
+      }
+      // mine/place buttons drive the same flags the mouse does
+      const mineNow = inputActive && t.mine;
+      if (mineNow !== this._touchMinePrev) {
+        this.mining = mineNow;
+        if (mineNow) { this.miningProgress = 0; this.miningCell = null; this.swing(); }
+        this._touchMinePrev = mineNow;
+      }
+      const placeNow = inputActive && t.place;
+      if (placeNow !== this._touchPlacePrev) {
+        this.rmbHeld = placeNow;
+        if (placeNow) this.placeTimer = 0;
+        this._touchPlacePrev = placeNow;
+      }
+    }
+
     const wantSprint = inputActive &&
-      (this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.sprintLatch);
+      (this.keys.has('ControlLeft') || this.keys.has('ControlRight') || this.sprintLatch || touchSprint);
     p.sprinting = wantSprint && input.forward && !input.sneak;
 
     // ---- simulate ----
@@ -1127,7 +1194,9 @@ class Game {
     p.events.length = 0;
 
     // ---- interaction & world streaming ----
-    if (this.locked && !this.pickerOpen && !menuOpen && !this.chatOpen) this.updateInteraction(dt);
+    const canInteract = (this.locked || this.touchMode) &&
+      !this.pickerOpen && !menuOpen && !this.chatOpen;
+    if (canInteract) this.updateInteraction(dt);
     else { this.outline.visible = false; this.crack.visible = false; }
 
     this.world.update(p.pos.x, p.pos.z, 5);

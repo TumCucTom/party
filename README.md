@@ -36,6 +36,10 @@ voxel engine from [Fable5-mc](https://github.com/souramoo/Fable5-mc)):
 - **No build step, no assets** — the 3D client (`src/client3d`) is served as
   native ES modules; every texture is painted onto canvases at startup and
   every sound is synthesized with WebAudio.
+- **Works on phones too** — on touch devices a virtual joystick, drag-to-look
+  and on-screen jump/sneak/mine/place buttons appear (double-tap jump to fly);
+  the HUD rearranges and scales for small screens. Desktop never sees the
+  touch UI.
 
 Open `/world`, pick a name and a room code, and share the link (the room code
 travels in the URL hash, e.g. `/world#treehouse`). The same room code always

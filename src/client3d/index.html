@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
 <title>Block Party — spatial video chat in a voxel world</title>
 <meta property="description" content="A spatially aware video call, now in a Minecraft-like world." />
 <meta property="og:title" content="Block Party" />
@@ -53,7 +53,7 @@
 <!-- ======================= Inventory picker ======================= -->
 <div id="picker" class="overlay hidden">
   <div class="picker-window">
-    <div class="picker-title">Select Block <span class="picker-hint">(click a block to put it in the selected hotbar slot — E / Esc to close)</span></div>
+    <div class="picker-title">Select Block <span class="picker-hint">(click a block to put it in the selected hotbar slot — E / Esc to close)</span><button id="picker-close" title="Close">✕</button></div>
     <div id="picker-grid"></div>
     <div id="picker-hotbar" class="picker-hotbar"></div>
   </div>

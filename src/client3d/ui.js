@@ -80,6 +80,7 @@ export class UI {
     click('btn-play', () => this.h.onPlay());
     click('btn-title-controls', () => { this.controlsReturn = 'title'; this.hide('title'); this.show('controls'); });
     this.$('btn-reconnect').addEventListener('click', () => window.location.reload());
+    this.$('picker-close').addEventListener('click', () => this.h.onClosePicker?.());
 
     click('btn-resume', () => this.h.onResume());
     click('btn-quit', () => this.h.onQuit());
@@ -175,6 +176,8 @@ export class UI {
       img.draggable = false;
       slot.appendChild(num);
       slot.appendChild(img);
+      // tappable on touch devices (the hotbar is click-through on desktop)
+      slot.addEventListener('click', () => this.h.onHotbarSelect(i));
       bar.appendChild(slot);
       this.slotEls.push(slot);
     }
