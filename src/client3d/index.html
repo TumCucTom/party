@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Block Party — spatial video chat in a voxel world</title>
+<meta property="description" content="A spatially aware video call, now in a Minecraft-like world." />
+<meta property="og:title" content="Block Party" />
+<meta property="og:description" content="Walk, build and talk — video chat with real 3D presence." />
+<link rel="shortcut icon" href="/assets/icon64.png" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="./style.css" />
+<script src="/socket.io/socket.io.js"></script>
+<script src="/vendor/peerjs/peerjs.min.js"></script>
+<script type="importmap">
+{
+  "imports": {
+    "three": "/vendor/three/three.module.js"
+  }
+}
+</script>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<!-- ======================= HUD (in game) ======================= -->
+<div id="hud" class="hidden">
+  <div id="crosshair"></div>
+  <div id="item-name"></div>
+  <div id="hotbar"></div>
+  <div id="debug" class="hidden"></div>
+  <div id="underwater-overlay"></div>
+  <div id="damage-vignette"></div>
+  <div id="self-view">
+    <video id="self-video" autoplay muted playsinline></video>
+    <div id="self-buttons">
+      <button id="btn-mic" class="av-button" title="Toggle microphone">🎙️</button>
+      <button id="btn-cam" class="av-button" title="Toggle camera">📷</button>
+    </div>
+  </div>
+  <div id="room-status"></div>
+</div>
+
+<!-- ======================= Inventory picker ======================= -->
+<div id="picker" class="overlay hidden">
+  <div class="picker-window">
+    <div class="picker-title">Select Block <span class="picker-hint">(click a block to put it in the selected hotbar slot — E / Esc to close)</span></div>
+    <div id="picker-grid"></div>
+    <div id="picker-hotbar" class="picker-hotbar"></div>
+  </div>
+</div>
+
+<!-- ======================= Join screen ======================= -->
+<div id="title-screen" class="overlay">
+  <div class="title-stack">
+    <div class="mc-logo">BLOCK PARTY</div>
+    <div class="mc-sublogo">SPATIAL VIDEO CHAT</div>
+    <div class="splash" id="splash-text">Talk to your neighbors!</div>
+    <div class="join-card">
+      <div class="join-cam-holder">
+        <video id="join-cam" autoplay muted playsinline></video>
+        <div id="join-cam-status">Requesting camera &amp; mic…</div>
+      </div>
+      <div class="join-fields">
+        <label for="name-input">YOUR NAME</label>
+        <input id="name-input" type="text" maxlength="16" placeholder="Steve" spellcheck="false" autocomplete="off" />
+        <label for="room-input">ROOM CODE <span class="field-hint">(same room = same world)</span></label>
+        <input id="room-input" type="text" maxlength="32" value="public" spellcheck="false" autocomplete="off" />
+        <button class="mc-button" id="btn-play">Join World</button>
+        <button class="mc-button small" id="btn-title-controls">Controls</button>
+        <div id="join-status"></div>
+      </div>
+    </div>
+    <div class="title-footer">
+      <span>walk up to people to start talking — walk away to leave the conversation</span>
+      <span>made with ❤️ by <a href="https://twitter.com/souramoo">@souramoo</a> · <a href="/join">classic 2D version</a></span>
+    </div>
+  </div>
+</div>
+
+<!-- ======================= Loading screen ======================= -->
+<div id="loading-screen" class="overlay hidden">
+  <div class="loading-stack">
+    <div class="loading-text">Building terrain…</div>
+    <div class="loading-bar"><div id="loading-fill"></div></div>
+    <div class="loading-tip" id="loading-tip">Tip: Double-tap SPACE to fly</div>
+  </div>
+</div>
+
+<!-- ======================= Pause menu ======================= -->
+<div id="pause-menu" class="overlay hidden">
+  <div class="menu-stack">
+    <div class="menu-title">Menu</div>
+    <div class="menu-note">(the party keeps going while you're here)</div>
+    <button class="mc-button" id="btn-resume">Back to the Party</button>
+    <button class="mc-button" id="btn-options">Options…</button>
+    <button class="mc-button" id="btn-controls">Controls</button>
+    <button class="mc-button" id="btn-quit">Leave World</button>
+  </div>
+</div>
+
+<!-- ======================= Options ======================= -->
+<div id="options-menu" class="overlay hidden">
+  <div class="menu-stack wide">
+    <div class="menu-title">Options</div>
+    <div class="opt-row"><label>Render Distance: <span id="val-render">7</span> chunks</label><input type="range" id="opt-render" min="4" max="12" step="1" /></div>
+    <div class="opt-row"><label>Field of View: <span id="val-fov">70</span></label><input type="range" id="opt-fov" min="40" max="110" step="1" /></div>
+    <div class="opt-row"><label>Mouse Sensitivity: <span id="val-sens">100</span>%</label><input type="range" id="opt-sens" min="20" max="300" step="5" /></div>
+    <div class="opt-row"><label>Volume: <span id="val-vol">70</span>%</label><input type="range" id="opt-vol" min="0" max="100" step="5" /></div>
+    <div class="opt-row checks">
+      <button class="mc-button small toggle" id="opt-bob">View Bobbing: ON</button>
+      <button class="mc-button small toggle" id="opt-clouds">Clouds: ON</button>
+      <button class="mc-button small toggle" id="opt-music">Music: ON</button>
+      <button class="mc-button small toggle" id="opt-smooth">Smooth Lighting: ON</button>
+    </div>
+    <button class="mc-button" id="btn-options-done">Done</button>
+  </div>
+</div>
+
+<!-- ======================= Controls help ======================= -->
+<div id="controls-menu" class="overlay hidden">
+  <div class="menu-stack wide">
+    <div class="menu-title">Controls</div>
+    <div class="controls-grid">
+      <span>Move</span><span>W A S D</span>
+      <span>Talk to someone</span><span>WALK UP TO THEM</span>
+      <span>Jump / Swim up</span><span>SPACE</span>
+      <span>Sneak (edge-safe)</span><span>SHIFT</span>
+      <span>Sprint</span><span>CTRL or double-tap W</span>
+      <span>Fly (toggle)</span><span>Double-tap SPACE</span>
+      <span>Fly up / down</span><span>SPACE / SHIFT</span>
+      <span>Break block</span><span>Hold LEFT CLICK</span>
+      <span>Place block</span><span>RIGHT CLICK</span>
+      <span>Pick block</span><span>MIDDLE CLICK</span>
+      <span>Select slot</span><span>1–9 or MOUSE WHEEL</span>
+      <span>Block inventory</span><span>E</span>
+      <span>Debug info</span><span>F3</span>
+      <span>Menu</span><span>ESC</span>
+    </div>
+    <div class="controls-note">Everyone in the room shares the same world — what you build, they see. TNT explodes when you break it!</div>
+    <button class="mc-button" id="btn-controls-done">Done</button>
+  </div>
+</div>
+
+<div id="disconnect-modal" class="overlay hidden">
+  <div class="menu-stack">
+    <div class="menu-title">Disconnected from server :(</div>
+    <button class="mc-button" id="btn-reconnect">Reconnect</button>
+  </div>
+</div>
+
+<div id="webgl-error" class="overlay hidden">
+  <div class="menu-stack"><div class="menu-title">WebGL is not available in this browser :(</div></div>
+</div>
+
+<script type="module" src="./main.js"></script>
+</body>
+</html>

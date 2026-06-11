@@ -1,12 +1,11 @@
 const fs = require('fs');
+const path = require('path');
 const express = require('express');
-const webpack = require('webpack');
-const webpackDevMiddleware = require('webpack-dev-middleware');
 const socketio = require('socket.io');
 
 const Constants = require('../shared/constants');
 const Game = require('./game');
-const webpackConfig = require('../../webpack.dev.js');
+const { World3D } = require('./world3d');
 
 // Setup an Express server
 const app = express();
@@ -24,8 +23,21 @@ app.use((req, res, next) => {
 });
 app.use(express.static('public'));
 
+// The 3D world client (/world) is served as native ES modules — no build
+// step. Its two runtime dependencies are vendored straight from node_modules.
+app.use('/world', express.static(path.join(__dirname, '../client3d')));
+app.use('/vendor/three', express.static(path.join(__dirname, '../../node_modules/three/build')));
+app.use('/vendor/peerjs', express.static(path.join(__dirname, '../../node_modules/peerjs/dist')));
+
 if (process.env.NODE_ENV === 'development') {
-  // Setup Webpack for development
+  // Setup Webpack for development (required lazily so production
+  // doesn't need to load the webpack toolchain to boot)
+  // eslint-disable-next-line global-require
+  const webpack = require('webpack');
+  // eslint-disable-next-line global-require
+  const webpackDevMiddleware = require('webpack-dev-middleware');
+  // eslint-disable-next-line global-require
+  const webpackConfig = require('../../webpack.dev.js');
   const compiler = webpack(webpackConfig);
   app.use(webpackDevMiddleware(compiler, { writeToDisk: true }));
 } else {
@@ -41,8 +53,9 @@ console.log(`Server listening on port ${port}`);
 // Setup socket.io
 const io = socketio(server);
 
-// Setup the Game
+// Setup the Game (classic 2D) and the voxel world (3D)
 const game = new Game();
+const world3d = new World3D(io);
 
 // Listen for socket.io connections
 io.on('connection', socket => {
@@ -52,6 +65,8 @@ io.on('connection', socket => {
   socket.on(Constants.MSG_TYPES.INPUT, handleInput);
   socket.on(Constants.MSG_TYPES.EMOTE, handleEmote);
   socket.on('disconnect', onDisconnect);
+
+  world3d.attach(socket);
 });
 
 function joinGame(joinData) {

@@ -1,0 +1,4 @@
+dist/
+node_modules/
+# served as native ES modules with its own style; not part of the webpack build
+src/client3d/

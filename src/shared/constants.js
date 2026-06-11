@@ -14,6 +14,16 @@ module.exports = Object.freeze({
     BRDCST_PLAYER_ENTERED: 'entered',
     BRDCST_PLAYER_LEFT: 'left',
   },
+  // 3D voxel world (/world) — keep in sync with src/client3d/constants.js
+  MSG_TYPES_3D: {
+    JOIN: 'w3:join',
+    INIT: 'w3:init',
+    STATE: 'w3:state',
+    PLAYER: 'w3:player',
+    LEAVE: 'w3:leave',
+    BLOCK: 'w3:block',
+    TNT: 'w3:tnt',
+  },
   EMOJIS: {
     neutral: '😐',
     happy: '😄',
