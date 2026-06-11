@@ -526,6 +526,7 @@ html, body {
 }
 .av-button:hover { background: rgba(80, 80, 110, 0.9); }
 .av-button.off { background: rgba(140, 40, 30, 0.9); }
+.av-button.live { background: rgba(60, 140, 50, 0.9); }
 
 #room-status {
   position: absolute;
