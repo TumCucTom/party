@@ -5,7 +5,7 @@
 Normally only one person can speak at a time in a standard conference call and it only gets worse the more people there are.
 This isn't like in real life, where we zone in and out of large groups, form smaller ones as the conversation takes us.
 
-[**Live Demo**](https://party.mookerj.ee/join).
+[**Live Demo**](https://party.souradip.com/).
 
 <p float="left">
 <img src="https://github.com/souramoo/party/blob/master/public/assets/landing/2020-04-11.png?raw=true" width="49%" />
@@ -17,8 +17,7 @@ Built with [Node.js](https://nodejs.org/), [socket.io](https://socket.io/), and 
 ## 🧊 Block Party — the 3D world (now the default at `/`)
 
 The spatial video chat concept, rebuilt with full functionality inside a
-Minecraft-like voxel world ([Three.js](https://threejs.org/) + the procedural
-voxel engine from [Fable5-mc](https://github.com/souramoo/Fable5-mc)):
+Minecraft-like voxel world ([Three.js](https://threejs.org/):
 
 - **Spatial voice & video** — walk up to someone to start a call (WebRTC via
   PeerJS, exactly like the 2D version), walk away to leave it. Voice is
