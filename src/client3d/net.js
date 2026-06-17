@@ -19,6 +19,9 @@ export class Net {
     this.onBlock = null;        // ({ x, y, z, id })
     this.onTnt = null;          // ({ x, y, z })
     this.onChat = null;         // ({ id, text })
+    this.onHit = null;          // ({ attackerId, victimId, damage, hp, kind })
+    this.onDeath = null;        // ({ attackerId, victimId, attackerKills, victimDeaths, respawnMs })
+    this.onRespawn = null;      // ({ id, hp, alive, kills, deaths })
     this.onDisconnect = null;   // ()
   }
 
@@ -34,6 +37,9 @@ export class Net {
     this.socket.on(MSG.BLOCK, (msg) => this.onBlock?.(msg));
     this.socket.on(MSG.TNT, (msg) => this.onTnt?.(msg));
     this.socket.on(MSG.CHAT, (msg) => this.onChat?.(msg));
+    this.socket.on(MSG.HIT, (msg) => this.onHit?.(msg));
+    this.socket.on(MSG.DEATH, (msg) => this.onDeath?.(msg));
+    this.socket.on(MSG.RESPAWN, (msg) => this.onRespawn?.(msg));
     this.socket.on('disconnect', () => this.onDisconnect?.());
 
     return new Promise((resolve, reject) => {
@@ -61,5 +67,9 @@ export class Net {
 
   sendChat(text) {
     if (this.socket && this.socket.connected) this.socket.emit(MSG.CHAT, { text });
+  }
+
+  sendAttack(kind) {
+    if (this.socket && this.socket.connected) this.socket.emit(MSG.ATTACK, { kind });
   }
 }

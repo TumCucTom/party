@@ -12,6 +12,19 @@ import { WorldGen, CHUNK, WORLD_H, SEA, BIOME_NAMES } from '../src/client3d/worl
 import { World } from '../src/client3d/world.js';
 import { buildBlockGeometry } from '../src/client3d/mesher.js';
 import { Player, raycastVoxel } from '../src/client3d/player.js';
+import {
+  applyDeath,
+  applyHit,
+  applyRespawn,
+  cooldownFraction,
+  createCombatState,
+  upsertCombatPlayer,
+} from '../src/client3d/combat.js';
+import {
+  ARENA_MATERIAL_TAGS,
+  arenaCollisionEdits,
+  createArenaPlan,
+} from '../src/client3d/arena.js';
 
 const fakeScene = { add() {}, remove() {} };
 const fakeMaterials = { solid: {}, water: {} };
@@ -73,6 +86,18 @@ ok('chunks generate and mesh', () => {
   const col = c.solidMesh.geometry.getAttribute('color');
   for (let i = 0; i < col.array.length; i++) {
     assert.ok(col.array[i] >= 0 && col.array[i] <= 1.001, `color in range, got ${col.array[i]}`);
+  }
+});
+ok('world mesh visibility can be toggled for arena mode', () => {
+  world.setMeshesVisible(false);
+  for (const c of world.chunks.values()) {
+    if (c.solidMesh) assert.strictEqual(c.solidMesh.visible, false);
+    if (c.waterMesh) assert.strictEqual(c.waterMesh.visible, false);
+  }
+  world.setMeshesVisible(true);
+  for (const c of world.chunks.values()) {
+    if (c.solidMesh) assert.strictEqual(c.solidMesh.visible, true);
+    if (c.waterMesh) assert.strictEqual(c.waterMesh.visible, true);
   }
 });
 ok('bedrock floor everywhere', () => {
@@ -204,6 +229,86 @@ ok('standalone geometry for every palette block', () => {
     const pos = g.getAttribute('position');
     assert.ok(pos.count >= 4, `${BLOCKS[id].name} has vertices`);
     for (let i = 0; i < pos.array.length; i++) assert.ok(Number.isFinite(pos.array[i]));
+  }
+});
+
+console.log('— combat helpers —');
+ok('hit updates the local victim and records feedback', () => {
+  const state = createCombatState({ id: 'me', hp: 100, alive: true });
+  applyHit(state, {
+    attackerId: 'them', victimId: 'me', damage: 34, hp: 66, kind: 'slash',
+  }, 'me');
+  assert.strictEqual(state.me.hp, 66);
+  assert.strictEqual(state.me.alive, true);
+  assert.strictEqual(state.lastHit.damage, 34);
+  assert.strictEqual(state.feed[0].type, 'hit');
+});
+
+ok('death and respawn update local score state', () => {
+  const state = createCombatState({ id: 'me', hp: 10, alive: true, deaths: 0 });
+  applyDeath(state, {
+    attackerId: 'them', victimId: 'me', attackerKills: 2, victimDeaths: 1, respawnMs: 3000,
+  }, 'me');
+  assert.strictEqual(state.me.hp, 0);
+  assert.strictEqual(state.me.alive, false);
+  assert.strictEqual(state.me.deaths, 1);
+  assert.strictEqual(state.respawnMs, 3000);
+
+  applyRespawn(state, {
+    id: 'me', hp: 100, alive: true, deaths: 1, kills: 0,
+  }, 'me');
+  assert.strictEqual(state.me.hp, 100);
+  assert.strictEqual(state.me.alive, true);
+  assert.strictEqual(state.respawnMs, 0);
+});
+
+ok('remote combat players are upserted and updated', () => {
+  const state = createCombatState({ id: 'me' });
+  upsertCombatPlayer(state, { id: 'them', hp: 100, alive: true, kills: 0, deaths: 0 });
+  applyHit(state, {
+    attackerId: 'me', victimId: 'them', damage: 55, hp: 45, kind: 'stab',
+  }, 'me');
+  assert.strictEqual(state.players.get('them').hp, 45);
+});
+
+ok('cooldown fraction is clamped', () => {
+  assert.strictEqual(cooldownFraction(1000, 1000, 400), 0);
+  assert.strictEqual(cooldownFraction(1200, 1000, 400), 0.5);
+  assert.strictEqual(cooldownFraction(2000, 1000, 400), 1);
+  assert.strictEqual(cooldownFraction(2000, 0, 400), 1);
+});
+
+console.log('— tactical arena —');
+ok('arena plan is finite and keeps spawn inside bounds', () => {
+  const plan = createArenaPlan({ x: SX, y: groundH, z: SZ });
+  assert.ok(Number.isFinite(plan.center.x));
+  assert.ok(Number.isFinite(plan.center.y));
+  assert.ok(Number.isFinite(plan.center.z));
+  assert.ok(plan.bounds.minX < plan.bounds.maxX);
+  assert.ok(plan.bounds.minZ < plan.bounds.maxZ);
+  assert.ok(plan.spawn.x > plan.bounds.minX && plan.spawn.x < plan.bounds.maxX);
+  assert.ok(plan.spawn.z > plan.bounds.minZ && plan.spawn.z < plan.bounds.maxZ);
+  for (const prop of plan.props) {
+    for (const n of [...prop.position, ...prop.size]) assert.ok(Number.isFinite(n));
+    assert.ok(prop.size[0] > 0 && prop.size[1] > 0 && prop.size[2] > 0);
+  }
+});
+
+ok('arena collision edits include floor and perimeter blockers', () => {
+  const plan = createArenaPlan({ x: SX, y: groundH, z: SZ });
+  const edits = arenaCollisionEdits(plan);
+  assert.ok(edits.length > 1000, 'collision substrate is substantial');
+  const floor = edits.filter((e) => e.y === plan.floorY && e.id !== B.AIR);
+  const wall = edits.filter((e) => e.y > plan.floorY && e.id !== B.AIR);
+  const clear = edits.filter((e) => e.y > plan.floorY && e.id === B.AIR);
+  assert.ok(floor.length > 100, 'floor blockers exist');
+  assert.ok(wall.length > 100, 'wall/cover blockers exist');
+  assert.ok(clear.length > 100, 'play volume is cleared');
+});
+
+ok('arena material tags avoid minecraft terrain surfaces', () => {
+  for (const tag of ARENA_MATERIAL_TAGS) {
+    assert.ok(!/grass|dirt|leaves|ore|flower|log/i.test(tag), tag);
   }
 });
 

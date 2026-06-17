@@ -90,3 +90,6 @@ dist/
 
 # 3D world persistence
 data/
+
+# Local feature worktrees
+.worktrees/

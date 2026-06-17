@@ -1,11 +1,10 @@
 // ============================================================
-// Main — Block Party: the spatial video chat rebuilt inside a
-// Minecraft-like world. Bootstraps the renderer and the voxel
-// engine, owns the state machine (join → loading → playing ⇄
-// menu), and wires the multiplayer layer: socket.io world sync
-// (seed + shared block edits + player positions), blocky
-// avatars with live webcam faces, and proximity video calls
-// with WebAudio-spatialized voice.
+// Main — Knife Party: spatial video chat inside a tactical
+// first-person combat room. Bootstraps the renderer and hidden
+// voxel physics substrate, owns the state machine (join →
+// loading → playing ⇄ menu), and wires multiplayer state,
+// combat, remote avatars with live webcam face plates, and
+// proximity video calls with WebAudio-spatialized voice.
 // ============================================================
 
 import * as THREE from 'three';
@@ -28,7 +27,16 @@ import { Rtc } from './rtc.js';
 import { Avatars } from './avatar.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { Minimap } from './minimap.js';
-import { STATE_SEND_HZ, CALL_DISTANCE } from './constants.js';
+import { COMBAT, STATE_SEND_HZ, CALL_DISTANCE } from './constants.js';
+import { TacticalArena, createArenaPlan, prepareArenaCollision } from './arena.js';
+import {
+  applyDeath,
+  applyHit,
+  applyRespawn,
+  createCombatState,
+  cooldownFraction,
+  upsertCombatPlayer,
+} from './combat.js';
 
 const SETTINGS_KEY = 'party3d:settings';
 const HOTBAR_KEY = 'party3d:hotbar';
@@ -139,6 +147,11 @@ class Game {
     this.sky = new Sky(this.scene, this.uniforms);
     this.sky.setViewDistance(this.settings.render);
     this.sky.setCloudsVisible(this.settings.clouds);
+    this.arenaMode = true;
+    this.arena = new TacticalArena(this.scene);
+    this.arenaPlan = null;
+    this.roomSpawn = null;
+    this.sky.setArenaMode?.(this.arenaMode);
 
     this.particles = new Particles(this.scene, this.materials.solid);
     this.entities = new Entities({
@@ -163,15 +176,20 @@ class Game {
     this.stateSendTimer = 0;
     this.proximityTimer = 0;
     this.lastSentState = null;
+    this.combat = createCombatState();
+    this.lastAttackAt = { slash: 0, stab: 0 };
+    this.attackAnim = { kind: 'slash', t: 1 };
+    this.hitMarkerT = 0;
     this.bindNet();
     this.initMedia();
 
-    // ---------- held block (separate pass over the world) ----------
+    // ---------- first-person knife (separate pass over the world) ----------
     this.handScene = new THREE.Scene();
     this.handCamera = new THREE.PerspectiveCamera(62, innerWidth / innerHeight, 0.01, 10);
     this.handGroup = new THREE.Group();
     this.handScene.add(this.handGroup);
     this.heldMesh = null;
+    this.knifeMesh = null;
     this.heldGeoCache = new Map();
     this.swingT = 1;  // 1 = idle
     this.dipT = 1;
@@ -208,9 +226,7 @@ class Game {
           if (this.state === 'playing' && !this.pickerOpen && !this.chatOpen) this.openChat();
         },
         onPicker: () => {
-          if (this.state !== 'playing' || this.chatOpen) return;
-          if (this.pickerOpen) this.closePicker(false);
-          else this.openPicker();
+          if (this.state === 'playing' && !this.chatOpen) this.ui.showToast('Knife equipped');
         },
       });
     }
@@ -401,19 +417,28 @@ class Game {
   // ============================================================
 
   bindNet() {
-    this.net.onInit = ({ seed, time, edits, players }) => {
+    this.net.onInit = ({ seed, time, edits, players, me }) => {
       this.createWorld(seed, edits);
+      this.combat = createCombatState(me || { id: this.net.id });
       this.sky.setTimeOfDay(time ?? 0.1);
-      for (const p of players) this.avatars.add(p);
+      for (const p of players) {
+        this.avatars.add(p);
+        upsertCombatPlayer(this.combat, p);
+        this.avatars.setCombatState?.(p.id, p);
+      }
       this.joining = false;
       this.ui.hideAllMenus();
       this.ui.show('loading');
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
       this.state = 'loading';
       this.lockPointer();
     };
 
     this.net.onPlayerJoin = (p) => {
       this.avatars.add(p);
+      upsertCombatPlayer(this.combat, p);
+      this.avatars.setCombatState?.(p.id, p);
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
       if (this.state === 'playing') this.ui.showToast(`${p.name} joined`);
     };
 
@@ -424,6 +449,8 @@ class Game {
       if (a && this.state === 'playing') this.ui.showToast(`${a.name} left`);
       this.rtc?.hangUp(id);
       this.avatars.remove(id);
+      this.combat.players.delete(id);
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
     };
 
     this.net.onBlock = ({ x, y, z, id }) => {
@@ -437,6 +464,40 @@ class Game {
     };
 
     this.net.onChat = ({ id, text }) => this.avatars.setChat(id, text);
+
+    this.net.onHit = (event) => {
+      applyHit(this.combat, event, this.net.id);
+      this.avatars.setCombatState?.(event.victimId, this.combat.players.get(event.victimId));
+      if (event.victimId === this.net.id) this.ui.flashDamage();
+      if (event.attackerId === this.net.id) {
+        this.hitMarkerT = 0.22;
+        this.ui.showToast(`${event.kind === 'stab' ? 'Stab' : 'Slash'} hit: ${event.damage}`);
+      }
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+    };
+
+    this.net.onDeath = (event) => {
+      applyDeath(this.combat, event, this.net.id);
+      this.avatars.setCombatState?.(event.victimId, this.combat.players.get(event.victimId));
+      if (event.victimId === this.net.id) {
+        this.keys.clear();
+        this.ui.showToast('Down — respawning');
+      } else if (event.attackerId === this.net.id) {
+        this.ui.showToast('Eliminated opponent');
+      }
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+    };
+
+    this.net.onRespawn = (event) => {
+      applyRespawn(this.combat, event, this.net.id);
+      this.avatars.setCombatState?.(event.id, this.combat.players.get(event.id));
+      if (event.id === this.net.id) {
+        this.player.teleport(this.spawn.x + 0.5, this.spawn.y + 1, this.spawn.z + 0.5);
+        this.player.vel.set(0, 0, 0);
+        this.ui.showToast('Back in');
+      }
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+    };
 
     this.net.onDisconnect = () => {
       if (this.state === 'title') return;
@@ -454,13 +515,13 @@ class Game {
       const info = await res.json();
       if (seq !== this._roomInfoSeq || this.state !== 'title') return; // stale
       if (!info.exists) {
-        this.ui.setRoomInfo('✨ a fresh, untouched world awaits');
+        this.ui.setRoomInfo('Fresh room — no one has stepped in yet');
       } else {
         const n = info.players.length;
         const who = n
-          ? `👥 ${n} ${n === 1 ? 'person' : 'people'} here now: ${info.players.slice(0, 4).join(', ')}${n > 4 ? '…' : ''}`
-          : '👥 nobody here right now';
-        this.ui.setRoomInfo(`${who} · 🧱 ${info.edits} block ${info.edits === 1 ? 'edit' : 'edits'}`);
+          ? `${n} ${n === 1 ? 'person' : 'people'} here now: ${info.players.slice(0, 4).join(', ')}${n > 4 ? '...' : ''}`
+          : 'Nobody here right now';
+        this.ui.setRoomInfo(`${who} · ${info.edits} arena ${info.edits === 1 ? 'change' : 'changes'}`);
       }
     } catch {
       if (seq === this._roomInfoSeq) this.ui.setRoomInfo('');
@@ -591,6 +652,7 @@ class Game {
       this.world.dispose();
       this.entities.clear();
     }
+    this.arena?.dispose();
     this.worldSeed = seed >>> 0;
     this.world = new World({
       seed: this.worldSeed,
@@ -599,13 +661,16 @@ class Game {
       viewRadius: this.settings.render,
       smoothLighting: this.settings.smooth,
     });
+    if (this.arenaMode) this.world.setMeshesVisible(false);
     if (worldEdits) this.world.loadWorldEdits(worldEdits);
     this.world.onEdit = (x, y, z, id) => this.net.sendBlock(x, y, z, id);
     this.entities.setWorld(this.world);
 
     this.minimap.setWorld(this.world);
+    this.minimap.setArenaPlan(null);
     this.player = new Player(this.world);
-    this.spawn = this.world.gen.findSpawn();
+    this.roomSpawn = this.world.gen.findSpawn();
+    this.spawn = { ...this.roomSpawn };
     // scatter players around the spawn so a full room doesn't stack up
     if (this.net.id) {
       const h = hashString(this.net.id);
@@ -613,6 +678,41 @@ class Game {
       this.spawn.z += ((h >>> 5) % 17) - 8;
     }
     this.player.teleport(this.spawn.x + 0.5, this.spawn.y + 1, this.spawn.z + 0.5);
+    if (this.arenaMode) this.rebuildArena(this.roomSpawn);
+  }
+
+  rebuildArena(center) {
+    if (!this.arenaMode || !this.arena) return null;
+    const plan = createArenaPlan(center);
+    this.arenaPlan = plan;
+    this.arena.rebuild(plan);
+    this.minimap?.setArenaPlan(plan);
+    return plan;
+  }
+
+  installArenaCollision() {
+    const base = this.roomSpawn || this.spawn;
+    const bx = Math.floor(base.x), bz = Math.floor(base.z);
+    const surfaceY = this.world.surfaceHeight(bx, bz) || Math.floor(base.y);
+    const plan = this.rebuildArena({ x: bx, y: surfaceY, z: bz });
+    if (!plan) return;
+
+    prepareArenaCollision(this.world, plan);
+    this.world.setMeshesVisible(false);
+
+    const sx = THREE.MathUtils.clamp(
+      Math.floor(this.spawn.x),
+      plan.bounds.minX + 3,
+      plan.bounds.maxX - 3,
+    );
+    const sz = THREE.MathUtils.clamp(
+      Math.floor(this.spawn.z),
+      plan.bounds.minZ + 3,
+      plan.bounds.maxZ - 3,
+    );
+    this.spawn = { x: sx, y: plan.floorY, z: sz };
+    this.player.teleport(sx + 0.5, plan.floorY + 1, sz + 0.5);
+    this.player.vel.set(0, 0, 0);
   }
 
   // ============================================================
@@ -620,16 +720,20 @@ class Game {
   // ============================================================
 
   finishLoading() {
-    // snap to the real surface (caves may have carved under the estimate)
-    const bx = Math.floor(this.player.pos.x), bz = Math.floor(this.player.pos.z);
-    let y = WORLD_H - 2;
-    while (y > 1 && !BLOCKS[this.world.getBlock(bx, y, bz)].solid) y--;
-    this.player.teleport(bx + 0.5, y + 1, bz + 0.5);
+    if (this.arenaMode) {
+      this.installArenaCollision();
+    } else {
+      // snap to the real surface (caves may have carved under the estimate)
+      const bx = Math.floor(this.player.pos.x), bz = Math.floor(this.player.pos.z);
+      let y = WORLD_H - 2;
+      while (y > 1 && !BLOCKS[this.world.getBlock(bx, y, bz)].solid) y--;
+      this.player.teleport(bx + 0.5, y + 1, bz + 0.5);
+    }
 
     this.state = 'playing';
     this.ui.hideAllMenus();
     this.ui.show('hud');
-    this.ui.updateHotbar(this.hotbar, this.selected);
+    this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
     this.startRtc();
     this.sendStateNow();
     this.ui.showToast(`Joined #${this.room}`);
@@ -747,13 +851,9 @@ class Game {
           this.debugVisible = !this.debugVisible;
           if (!this.debugVisible) this.ui.setDebug(false);
           break;
-        case 'KeyE':
-          e.preventDefault();
-          this.openPicker();
-          break;
         case 'KeyF':
           this.player.flying = !this.player.flying;
-          this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
+          this.ui.showToast(this.player.flying ? 'Freecam enabled' : 'Freecam disabled');
           break;
         case 'KeyM':
           this.toggleMic();
@@ -778,7 +878,7 @@ class Game {
           if (now - this.lastSpace < 320) {
             this.player.flying = !this.player.flying;
             if (this.player.flying) this.player.vel.y = 0;
-            this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
+            this.ui.showToast(this.player.flying ? 'Freecam enabled' : 'Freecam disabled');
           }
           this.lastSpace = now;
           break;
@@ -789,10 +889,6 @@ class Game {
           this.lastW = now;
           break;
         }
-        default:
-          if (/^Digit[1-9]$/.test(e.code)) {
-            this.selectSlot(Number(e.code.slice(5)) - 1);
-          }
       }
     });
 
@@ -828,29 +924,20 @@ class Game {
       if (this.state !== 'playing' || this.pickerOpen || this.chatOpen) return;
       if (!this.locked) { this.lockPointer(); return; }
       if (e.button === 0) {
-        this.mining = true;
-        this.miningProgress = 0;
-        this.miningCell = null;
-        this.swing();
-      } else if (e.button === 1) {
-        e.preventDefault();
-        this.pickTargetBlock();
+        this.performAttack('slash');
       } else if (e.button === 2) {
-        this.rmbHeld = true;
-        this.placeTimer = 0.24;
-        this.placeBlock();
+        this.performAttack('stab');
       }
     });
 
     document.addEventListener('mouseup', (e) => {
-      if (e.button === 0) { this.mining = false; this.miningProgress = 0; this.miningCell = null; }
+      if (e.button === 0) this.mining = false;
       if (e.button === 2) this.rmbHeld = false;
     });
 
     document.addEventListener('wheel', (e) => {
       if (this.state !== 'playing' || !this.locked) return;
-      const dir = e.deltaY > 0 ? 1 : -1;
-      this.selectSlot((this.selected + dir + 9) % 9);
+      if (Math.abs(e.deltaY) > 0) this.ui.showToast('Knife equipped');
     }, { passive: true });
   }
 
@@ -922,7 +1009,7 @@ class Game {
   }
 
   // ============================================================
-  // Interaction: mining / placing / picking
+  // Interaction: knife combat
   // ============================================================
 
   currentTarget() {
@@ -932,6 +1019,35 @@ class Game {
   }
 
   swing() { this.swingT = 0; }
+
+  performAttack(kind) {
+    if (this.combat.me.alive === false) return;
+    const cooldown = kind === 'stab' ? COMBAT.STAB_COOLDOWN_MS : COMBAT.SLASH_COOLDOWN_MS;
+    const now = performance.now();
+    if (cooldownFraction(now, this.lastAttackAt[kind], cooldown) < 1) return;
+    this.lastAttackAt[kind] = now;
+    this.attackAnim = { kind, t: 0 };
+    this.swingT = 0;
+    this.sendStateNow();
+    this.net.sendAttack(kind);
+    this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+  }
+
+  combatHudSnapshot() {
+    const now = performance.now();
+    return {
+      slashReady: cooldownFraction(now, this.lastAttackAt.slash, COMBAT.SLASH_COOLDOWN_MS),
+      stabReady: cooldownFraction(now, this.lastAttackAt.stab, COMBAT.STAB_COOLDOWN_MS),
+      hitMarker: this.hitMarkerT > 0,
+    };
+  }
+
+  updateCombat(dt) {
+    this.outline.visible = false;
+    this.crack.visible = false;
+    this.hitMarkerT = Math.max(0, this.hitMarkerT - dt);
+    this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+  }
 
   updateInteraction(dt) {
     const target = this.currentTarget();
@@ -1089,7 +1205,7 @@ class Game {
   }
 
   // ============================================================
-  // Held block (first-person view model)
+  // Knife (first-person view model)
   // ============================================================
 
   heldGeometry(id) {
@@ -1098,34 +1214,74 @@ class Game {
     return g;
   }
 
-  updateHand(dt) {
-    const id = this.hotbar[this.selected];
-    if (!this.heldMesh || this.heldId !== id) {
-      if (this.heldMesh) this.handGroup.remove(this.heldMesh);
-      this.heldMesh = new THREE.Mesh(this.heldGeometry(id), this.materials.solid);
-      this.heldMesh.scale.setScalar(0.4);
-      this.handGroup.add(this.heldMesh);
-      this.heldId = id;
+  createKnifeViewModel() {
+    const group = new THREE.Group();
+    const bladeMat = new THREE.MeshBasicMaterial({ color: 0xd9dee7 });
+    const edgeMat = new THREE.MeshBasicMaterial({ color: 0xf7f8f6 });
+    const handleMat = new THREE.MeshBasicMaterial({ color: 0x20242a });
+    const gripMat = new THREE.MeshBasicMaterial({ color: 0x5fb3b3 });
+
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.075, 0.72, 0.026), bladeMat);
+    blade.position.y = 0.34;
+    blade.rotation.z = -0.08;
+    group.add(blade);
+
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(0.018, 0.66, 0.031), edgeMat);
+    edge.position.set(0.045, 0.35, 0.004);
+    edge.rotation.z = -0.08;
+    group.add(edge);
+
+    const tip = new THREE.Mesh(new THREE.ConeGeometry(0.05, 0.16, 4), bladeMat);
+    tip.position.set(-0.028, 0.74, 0);
+    tip.rotation.set(0, Math.PI / 4, -0.08);
+    group.add(tip);
+
+    const guard = new THREE.Mesh(new THREE.BoxGeometry(0.27, 0.05, 0.06), handleMat);
+    guard.position.y = -0.04;
+    group.add(guard);
+
+    const handle = new THREE.Mesh(new THREE.BoxGeometry(0.105, 0.44, 0.085), handleMat);
+    handle.position.y = -0.27;
+    group.add(handle);
+
+    for (let i = 0; i < 4; i++) {
+      const band = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.025, 0.095), gripMat);
+      band.position.y = -0.11 - i * 0.09;
+      group.add(band);
     }
 
-    this.swingT = Math.min(1, this.swingT + dt / 0.26);
+    group.rotation.set(-0.18, 0.25, -0.16);
+    return group;
+  }
+
+  updateHand(dt) {
+    if (!this.knifeMesh) {
+      this.knifeMesh = this.createKnifeViewModel();
+      this.handGroup.add(this.knifeMesh);
+    }
+
+    const duration = this.attackAnim.kind === 'stab' ? 0.34 : 0.28;
+    this.attackAnim.t = Math.min(1, this.attackAnim.t + dt / duration);
+    this.swingT = this.attackAnim.t;
     this.dipT = Math.min(1, this.dipT + dt / 0.22);
 
     const p = this.player;
     const bobX = Math.sin(p.walkCycle * 1.0) * 0.022 * p.bobStrength;
     const bobY = -Math.abs(Math.sin(p.walkCycle * 1.0)) * 0.018 * p.bobStrength;
-    const swing = Math.sin(Math.min(1, this.swingT) * Math.PI);
+    const swing = Math.sin(Math.min(1, this.attackAnim.t) * Math.PI);
     const dip = Math.sin(Math.min(1, this.dipT) * Math.PI);
+    const stab = this.attackAnim.kind === 'stab' ? swing : 0;
+    const slash = this.attackAnim.kind === 'slash' ? swing : 0;
 
     this.handGroup.position.set(
-      0.42 + bobX,
-      -0.42 + bobY - dip * 0.3 - swing * 0.08,
-      -0.72 - swing * 0.18,
+      0.47 + bobX - slash * 0.28,
+      -0.43 + bobY - dip * 0.16 - slash * 0.08,
+      -0.82 - stab * 0.46,
     );
     this.handGroup.rotation.set(
-      -swing * 0.9,
-      Math.PI * 0.13 - swing * 0.45,
-      0,
+      -0.34 - stab * 0.18 + slash * 0.22,
+      0.52 - slash * 0.95,
+      -0.18 - slash * 1.15,
     );
   }
 
@@ -1259,7 +1415,8 @@ class Game {
     const p = this.player;
 
     // ---- input snapshot ----
-    const inputActive = !this.pickerOpen && !menuOpen && !this.chatOpen;
+    const alive = this.combat.me.alive !== false;
+    const inputActive = alive && !this.pickerOpen && !menuOpen && !this.chatOpen;
     const input = {
       forward: inputActive && this.keys.has('KeyW'),
       back: inputActive && this.keys.has('KeyS'),
@@ -1281,17 +1438,15 @@ class Game {
         input.sneak = input.sneak || t.sneak;
         touchSprint = t.wantsSprint();
       }
-      // mine/place buttons drive the same flags the mouse does
+      // Touch mine/place buttons become quick slash / committed stab.
       const mineNow = inputActive && t.mine;
       if (mineNow !== this._touchMinePrev) {
-        this.mining = mineNow;
-        if (mineNow) { this.miningProgress = 0; this.miningCell = null; this.swing(); }
+        if (mineNow) this.performAttack('slash');
         this._touchMinePrev = mineNow;
       }
       const placeNow = inputActive && t.place;
       if (placeNow !== this._touchPlacePrev) {
-        this.rmbHeld = placeNow;
-        if (placeNow) this.placeTimer = 0;
+        if (placeNow) this.performAttack('stab');
         this._touchPlacePrev = placeNow;
       }
     }
@@ -1320,8 +1475,13 @@ class Game {
     // ---- interaction & world streaming ----
     const canInteract = (this.locked || this.touchMode) &&
       !this.pickerOpen && !menuOpen && !this.chatOpen;
-    if (canInteract) this.updateInteraction(dt);
-    else { this.outline.visible = false; this.crack.visible = false; }
+    if (canInteract) this.updateCombat(dt);
+    else {
+      this.outline.visible = false;
+      this.crack.visible = false;
+      this.hitMarkerT = Math.max(0, this.hitMarkerT - dt);
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+    }
 
     this.world.update(p.pos.x, p.pos.z, 5);
     this.processSupportChecks();
@@ -1382,19 +1542,25 @@ class Game {
     const facing = dirs[Math.round(yawDeg / 45) % 8];
     const target = this.currentTarget();
     const biome = BIOME_NAMES[this.world.biomeAt(bx, bz)] ?? '?';
+    const environmentLine = this.arenaMode
+      ? `Arena: tactical yard   Atmosphere: fixed`
+      : `Biome: ${biome}   Time: ${this.sky.clockString()}`;
+    const targetLine = target
+      ? `${this.arenaMode ? 'Collision' : 'Terrain'}: ${BLOCKS[target.id].name} @ ${target.x} ${target.y} ${target.z}`
+      : `${this.arenaMode ? 'Collision' : 'Terrain'}: -`;
     return [
-      `Block Party (Three.js) — ${this.fps} fps`,
+      `Knife Party (Three.js) — ${this.fps} fps`,
       `Room: #${this.room}   Players: ${this.avatars.count() + 1}   Calls: ${this.rtc ? this.rtc.calls.size : 0}`,
       `XYZ: ${p.pos.x.toFixed(2)} / ${p.pos.y.toFixed(2)} / ${p.pos.z.toFixed(2)}`,
-      `Block: ${bx} ${by} ${bz}   Chunk: ${cx} ${cz} [${bx & 15} ${bz & 15}]`,
+      `Cell: ${bx} ${by} ${bz}   Chunk: ${cx} ${cz} [${bx & 15} ${bz & 15}]`,
       `Facing: ${facing} (yaw ${yawDeg.toFixed(1)}°, pitch ${THREE.MathUtils.radToDeg(p.pitch).toFixed(1)}°)`,
-      `Biome: ${biome}   Time: ${this.sky.clockString()}`,
+      environmentLine,
       `Seed: ${this.worldSeed}`,
       `Chunks: ${this.world.countLoaded()} ready / ${this.world.chunks.size} loaded   Edits: ${this.world.editCount}`,
       `Entities: ${this.entities.list.length}   Particles: ${this.particles.list.length}`,
       `Draw calls: ${this.lastDrawInfo.calls}   Tris: ${(this.lastDrawInfo.triangles / 1000).toFixed(1)}k`,
       `Flags: ${p.onGround ? 'ground ' : ''}${p.flying ? 'flying ' : ''}${p.inWater ? 'water ' : ''}${p.sprinting ? 'sprint ' : ''}${p.sneaking ? 'sneak' : ''}`,
-      target ? `Target: ${BLOCKS[target.id].name} @ ${target.x} ${target.y} ${target.z}` : 'Target: —',
+      targetLine,
     ].join('\n');
   }
 }

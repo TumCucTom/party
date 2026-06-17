@@ -1,10 +1,8 @@
 // ============================================================
 // Minimap — top-down radar in the HUD corner so you can find
-// people. North-up terrain layer sampled from loaded chunks
-// (height-shaded block colors, refreshed every half second)
-// with live markers on top: a white arrow for you, a colored
-// dot per player (their avatar color). Players outside the map
-// range clamp to the edge so you always know which way to walk.
+// people. Arena mode draws the tactical floor plan; legacy mode
+// can still sample loaded terrain. Live markers sit on top: a
+// white arrow for you, a colored dot per player.
 // ============================================================
 
 import { B } from './blocks.js';
@@ -59,6 +57,7 @@ export class Minimap {
     this.ctx = canvas.getContext('2d');
     this.size = canvas.width;
     this.world = null;
+    this.arenaPlan = null;
 
     // terrain layer cache
     this.terrain = document.createElement('canvas');
@@ -74,6 +73,11 @@ export class Minimap {
     this.refreshT = 0;
   }
 
+  setArenaPlan(plan) {
+    this.arenaPlan = plan;
+    this.refreshT = 0;
+  }
+
   update(dt, player, avatars) {
     if (!this.world) return;
     this.refreshT -= dt;
@@ -82,9 +86,59 @@ export class Minimap {
       this.refreshT = TERRAIN_REFRESH;
       this._lastCx = px;
       this._lastCz = pz;
-      this.drawTerrain(px, pz);
+      if (this.arenaPlan) this.drawArenaTerrain(px, pz);
+      else this.drawTerrain(px, pz);
     }
     this.draw(player, avatars);
+  }
+
+  drawArenaTerrain(px, pz) {
+    const s = this.size;
+    const half = s / 2;
+    const g = this.tctx;
+    const plan = this.arenaPlan;
+    const mapX = (x) => half + ((x - px) / RANGE) * half;
+    const mapZ = (z) => half + ((z - pz) / RANGE) * half;
+    const rect = (x0, z0, x1, z1) => {
+      const x = mapX(x0), y = mapZ(z0);
+      return [x, y, mapX(x1) - x, mapZ(z1) - y];
+    };
+
+    g.clearRect(0, 0, s, s);
+    g.fillStyle = '#15181a';
+    g.fillRect(0, 0, s, s);
+
+    const [fx, fz, fw, fh] = rect(plan.bounds.minX, plan.bounds.minZ, plan.bounds.maxX, plan.bounds.maxZ);
+    g.fillStyle = '#596160';
+    g.fillRect(fx, fz, fw, fh);
+
+    g.strokeStyle = '#d9a441';
+    g.lineWidth = 1.4;
+    g.strokeRect(fx, fz, fw, fh);
+
+    g.strokeStyle = 'rgba(217,164,65,0.55)';
+    g.lineWidth = 1;
+    for (const xOff of [-12, 0, 12]) {
+      g.beginPath();
+      g.moveTo(mapX(plan.center.x + xOff), mapZ(plan.bounds.minZ + 5));
+      g.lineTo(mapX(plan.center.x + xOff), mapZ(plan.bounds.maxZ - 5));
+      g.stroke();
+    }
+
+    for (const p of plan.props) {
+      const [x, , z] = p.position;
+      const [w, , d] = p.size;
+      g.save();
+      g.translate(mapX(x), mapZ(z));
+      g.rotate(-(p.rotation || 0));
+      g.fillStyle = p.kind === 'target' ? '#d9d1b4' : p.material === 'gunmetal_panel' ? '#24292d' : '#2f2a1f';
+      g.strokeStyle = p.kind === 'barrier' ? '#d9a441' : '#101315';
+      const mw = (w / RANGE) * half;
+      const md = (d / RANGE) * half;
+      g.fillRect(-mw / 2, -md / 2, mw, md);
+      g.strokeRect(-mw / 2, -md / 2, mw, md);
+      g.restore();
+    }
   }
 
   drawTerrain(px, pz) {

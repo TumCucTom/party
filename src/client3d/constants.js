@@ -14,6 +14,23 @@ export const MSG = {
   BLOCK: 'w3:block',
   TNT: 'w3:tnt',
   CHAT: 'w3:chat',
+  ATTACK: 'w3:attack',
+  HIT: 'w3:hit',
+  DEATH: 'w3:death',
+  RESPAWN: 'w3:respawn',
+};
+
+export const COMBAT = {
+  MAX_HP: 100,
+  SLASH_DAMAGE: 34,
+  STAB_DAMAGE: 55,
+  SLASH_RANGE: 2.15,
+  STAB_RANGE: 2.55,
+  SLASH_COOLDOWN_MS: 420,
+  STAB_COOLDOWN_MS: 820,
+  SLASH_CONE_DEG: 92,
+  STAB_CONE_DEG: 58,
+  RESPAWN_MS: 3000,
 };
 
 // Voice/video range, in blocks (1 block ≈ 1 metre).
