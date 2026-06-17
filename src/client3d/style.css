@@ -624,8 +624,10 @@ html, body {
    reachable while the menu is open — the only mouse-cursor moment in game */
 #self-view {
   position: fixed;
-  right: 10px;
-  bottom: 10px;
+  left: 10px;
+  top: 10px;
+  right: auto;
+  bottom: auto;
   width: 152px;
   z-index: 25;
   pointer-events: auto;
