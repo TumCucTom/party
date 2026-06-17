@@ -12,6 +12,14 @@ import { WorldGen, CHUNK, WORLD_H, SEA, BIOME_NAMES } from '../src/client3d/worl
 import { World } from '../src/client3d/world.js';
 import { buildBlockGeometry } from '../src/client3d/mesher.js';
 import { Player, raycastVoxel } from '../src/client3d/player.js';
+import {
+  applyDeath,
+  applyHit,
+  applyRespawn,
+  cooldownFraction,
+  createCombatState,
+  upsertCombatPlayer,
+} from '../src/client3d/combat.js';
 
 const fakeScene = { add() {}, remove() {} };
 const fakeMaterials = { solid: {}, water: {} };
@@ -205,6 +213,52 @@ ok('standalone geometry for every palette block', () => {
     assert.ok(pos.count >= 4, `${BLOCKS[id].name} has vertices`);
     for (let i = 0; i < pos.array.length; i++) assert.ok(Number.isFinite(pos.array[i]));
   }
+});
+
+console.log('— combat helpers —');
+ok('hit updates the local victim and records feedback', () => {
+  const state = createCombatState({ id: 'me', hp: 100, alive: true });
+  applyHit(state, {
+    attackerId: 'them', victimId: 'me', damage: 34, hp: 66, kind: 'slash',
+  }, 'me');
+  assert.strictEqual(state.me.hp, 66);
+  assert.strictEqual(state.me.alive, true);
+  assert.strictEqual(state.lastHit.damage, 34);
+  assert.strictEqual(state.feed[0].type, 'hit');
+});
+
+ok('death and respawn update local score state', () => {
+  const state = createCombatState({ id: 'me', hp: 10, alive: true, deaths: 0 });
+  applyDeath(state, {
+    attackerId: 'them', victimId: 'me', attackerKills: 2, victimDeaths: 1, respawnMs: 3000,
+  }, 'me');
+  assert.strictEqual(state.me.hp, 0);
+  assert.strictEqual(state.me.alive, false);
+  assert.strictEqual(state.me.deaths, 1);
+  assert.strictEqual(state.respawnMs, 3000);
+
+  applyRespawn(state, {
+    id: 'me', hp: 100, alive: true, deaths: 1, kills: 0,
+  }, 'me');
+  assert.strictEqual(state.me.hp, 100);
+  assert.strictEqual(state.me.alive, true);
+  assert.strictEqual(state.respawnMs, 0);
+});
+
+ok('remote combat players are upserted and updated', () => {
+  const state = createCombatState({ id: 'me' });
+  upsertCombatPlayer(state, { id: 'them', hp: 100, alive: true, kills: 0, deaths: 0 });
+  applyHit(state, {
+    attackerId: 'me', victimId: 'them', damage: 55, hp: 45, kind: 'stab',
+  }, 'me');
+  assert.strictEqual(state.players.get('them').hp, 45);
+});
+
+ok('cooldown fraction is clamped', () => {
+  assert.strictEqual(cooldownFraction(1000, 1000, 400), 0);
+  assert.strictEqual(cooldownFraction(1200, 1000, 400), 0.5);
+  assert.strictEqual(cooldownFraction(2000, 1000, 400), 1);
+  assert.strictEqual(cooldownFraction(2000, 0, 400), 1);
 });
 
 console.log(`\nAll ${passed} smoke tests passed ✔`);
