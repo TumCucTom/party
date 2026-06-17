@@ -667,6 +667,7 @@ class Game {
     this.entities.setWorld(this.world);
 
     this.minimap.setWorld(this.world);
+    this.minimap.setArenaPlan(null);
     this.player = new Player(this.world);
     this.roomSpawn = this.world.gen.findSpawn();
     this.spawn = { ...this.roomSpawn };
@@ -685,6 +686,7 @@ class Game {
     const plan = createArenaPlan(center);
     this.arenaPlan = plan;
     this.arena.rebuild(plan);
+    this.minimap?.setArenaPlan(plan);
     return plan;
   }
 

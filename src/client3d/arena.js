@@ -265,14 +265,14 @@ export class TacticalArena {
     const depth = plan.bounds.maxZ - plan.bounds.minZ + 1;
     return {
       concrete: new THREE.MeshStandardMaterial({
-        color: 0x6a675c,
-        map: noiseTexture('#59564c', '#ffffff', 'rgba(30,28,25,0.22)', width / 10, depth / 10),
+        color: 0x596160,
+        map: noiseTexture('#596160', '#ffffff', 'rgba(28,32,31,0.24)', width / 10, depth / 10),
         roughness: 0.92,
         metalness: 0.02,
       }),
       stucco: new THREE.MeshStandardMaterial({
-        color: 0xb9a16b,
-        map: noiseTexture('#b9a16b', '#ffffff', 'rgba(72,61,44,0.22)', 7, 2),
+        color: 0x918c7c,
+        map: noiseTexture('#918c7c', '#ffffff', 'rgba(62,60,53,0.24)', 7, 2),
         roughness: 0.88,
         metalness: 0.01,
       }),
