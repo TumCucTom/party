@@ -1,17 +1,16 @@
 // ============================================================
-// Avatars — blocky Minecraft-style bodies for remote players.
-// The head's front face is a live webcam VideoTexture when a
-// call is up (the "spatial video" part of spatial video chat),
-// otherwise a procedurally painted face in the player's color.
-// Positions arrive at ~12 Hz and are smoothed; arms & legs
-// swing with horizontal speed; a name tag floats above.
+// Avatars — low-poly tactical silhouettes for remote players.
+// The helmet visor is a live webcam VideoTexture when a call is
+// up (the spatial video part), otherwise a procedurally painted
+// face plate in the player's color. Positions arrive at ~12 Hz
+// and are smoothed; arms & legs swing with horizontal speed.
 // ============================================================
 
 import * as THREE from 'three';
 
-const HEAD = 0.55;            // head cube edge (slightly chunky for visibility)
+const HEAD = 0.55;
 const BODY_W = 0.5, BODY_H = 0.7, BODY_D = 0.26;
-const LIMB = 0.22, LEG_H = 0.65, ARM_H = 0.62;
+const LIMB = 0.16, LEG_H = 0.65, ARM_H = 0.62;
 const NECK_Y = LEG_H + BODY_H; // top of body, where the head sits
 
 function hueFromId(id) {
@@ -24,20 +23,24 @@ function faceCanvas(hue, name) {
   const c = document.createElement('canvas');
   c.width = c.height = 64;
   const g = c.getContext('2d');
-  g.fillStyle = `hsl(${hue}, 45%, 62%)`;
+  const grd = g.createLinearGradient(0, 0, 64, 64);
+  grd.addColorStop(0, `hsl(${hue}, 35%, 66%)`);
+  grd.addColorStop(1, `hsl(${hue}, 30%, 42%)`);
+  g.fillStyle = grd;
   g.fillRect(0, 0, 64, 64);
-  g.fillStyle = `hsl(${hue}, 45%, 50%)`;          // pixel noise, steve-ish
-  for (let i = 0; i < 26; i++) g.fillRect((Math.random() * 8 | 0) * 8, (Math.random() * 8 | 0) * 8, 8, 8);
-  g.fillStyle = '#fff';                            // eyes
-  g.fillRect(12, 26, 12, 8); g.fillRect(40, 26, 12, 8);
-  g.fillStyle = '#3b2d63';
-  g.fillRect(18, 26, 6, 8); g.fillRect(40, 26, 6, 8);
-  g.fillStyle = 'rgba(40,20,20,0.8)';              // mouth
-  g.fillRect(24, 46, 16, 5);
-  g.fillStyle = '#fff';                            // initial on the forehead
-  g.font = 'bold 14px monospace';
+  g.fillStyle = 'rgba(21,24,26,0.78)';
+  g.beginPath();
+  g.roundRect?.(8, 13, 48, 32, 8);
+  if (!g.roundRect) g.rect(8, 13, 48, 32);
+  g.fill();
+  g.strokeStyle = 'rgba(127,183,180,0.95)';
+  g.lineWidth = 3;
+  g.strokeRect(11, 16, 42, 26);
+  g.fillStyle = 'rgba(242,244,243,0.9)';
+  g.font = 'bold 24px Rajdhani, monospace';
   g.textAlign = 'center';
-  g.fillText((name || '?')[0].toUpperCase(), 32, 16);
+  g.textBaseline = 'middle';
+  g.fillText((name || '?')[0].toUpperCase(), 32, 31);
   return c;
 }
 
@@ -64,7 +67,7 @@ function nameSprite(name) {
 }
 
 function chatSprite(text) {
-  // Runescape-style: yellow text with a black outline, word-wrapped
+  // Compact radio-callout text with a dark backing, word-wrapped.
   const words = String(text).split(/\s+/);
   const lines = [];
   let line = '';
@@ -92,10 +95,10 @@ function chatSprite(text) {
   g.textBaseline = 'middle';
   lines.forEach((l, i) => {
     const y = 4 + lineH * i + lineH / 2;
-    g.lineWidth = 5;
-    g.strokeStyle = '#000';
+    g.lineWidth = 4;
+    g.strokeStyle = '#101315';
     g.strokeText(l, c.width / 2, y);
-    g.fillStyle = '#ffff5e';
+    g.fillStyle = '#d9a441';
     g.fillText(l, c.width / 2, y);
   });
 
@@ -116,45 +119,58 @@ class Avatar {
     this.group = new THREE.Group();
 
     const hue = hueFromId(id);
-    const shirt = new THREE.MeshBasicMaterial({ color: new THREE.Color(`hsl(${hue}, 42%, 48%)`) });
-    const pants = new THREE.MeshBasicMaterial({ color: new THREE.Color(`hsl(${(hue + 200) % 360}, 30%, 35%)`) });
-    const skin = new THREE.MeshBasicMaterial({ color: new THREE.Color(`hsl(${hue}, 45%, 62%)`) });
+    const cloth = new THREE.MeshBasicMaterial({ color: new THREE.Color(`hsl(${hue}, 22%, 34%)`) });
+    const pants = new THREE.MeshBasicMaterial({ color: new THREE.Color(`hsl(${(hue + 210) % 360}, 18%, 24%)`) });
+    const armor = new THREE.MeshBasicMaterial({ color: 0x20262b });
+    const dark = new THREE.MeshBasicMaterial({ color: 0x101315 });
 
     // ---- head (own group so it can pitch) ----
     this.headGroup = new THREE.Group();
     this.headGroup.position.y = NECK_Y + HEAD / 2;
-    const head = new THREE.Mesh(new THREE.BoxGeometry(HEAD, HEAD, HEAD), skin);
-    this.headGroup.add(head);
+    const helmet = new THREE.Mesh(new THREE.SphereGeometry(HEAD * 0.52, 14, 9), armor);
+    helmet.scale.set(1.05, 0.86, 0.96);
+    this.headGroup.add(helmet);
+    const jaw = new THREE.Mesh(new THREE.BoxGeometry(HEAD * 0.72, HEAD * 0.18, HEAD * 0.42), armor);
+    jaw.position.set(0, -HEAD * 0.28, -HEAD * 0.08);
+    this.headGroup.add(jaw);
 
     const faceTex = new THREE.CanvasTexture(faceCanvas(hue, this.name));
     faceTex.colorSpace = THREE.SRGBColorSpace;
-    faceTex.magFilter = THREE.NearestFilter;
     this.faceTex = faceTex;
     this.faceMat = new THREE.MeshBasicMaterial({ map: faceTex });
     // front of the avatar is -Z (matches the engine's yaw convention)
-    this.face = new THREE.Mesh(new THREE.PlaneGeometry(HEAD * 0.96, HEAD * 0.96), this.faceMat);
-    this.face.position.z = -(HEAD / 2 + 0.004);
+    this.face = new THREE.Mesh(new THREE.PlaneGeometry(HEAD * 0.78, HEAD * 0.56), this.faceMat);
+    this.face.position.set(0, -HEAD * 0.02, -(HEAD * 0.48 + 0.006));
     this.face.rotation.y = Math.PI;
     this.headGroup.add(this.face);
     this.group.add(this.headGroup);
 
     // ---- body & limbs ----
-    const body = new THREE.Mesh(new THREE.BoxGeometry(BODY_W, BODY_H, BODY_D), shirt);
+    const body = new THREE.Mesh(new THREE.CylinderGeometry(BODY_W * 0.46, BODY_W * 0.34, BODY_H, 8), cloth);
     body.position.y = LEG_H + BODY_H / 2;
     this.group.add(body);
+    const vest = new THREE.Mesh(new THREE.BoxGeometry(BODY_W * 0.86, BODY_H * 0.72, BODY_D * 1.2), armor);
+    vest.position.set(0, LEG_H + BODY_H * 0.54, -0.015);
+    this.group.add(vest);
+    const chestLight = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.18, 0.02), new THREE.MeshBasicMaterial({ color: 0x5fb3b3 }));
+    chestLight.position.set(BODY_W * 0.22, LEG_H + BODY_H * 0.76, -(BODY_D * 0.62 + 0.012));
+    this.group.add(chestLight);
 
     const limb = (mat, h) => {
       const pivot = new THREE.Group();
-      const m = new THREE.Mesh(new THREE.BoxGeometry(LIMB, h, LIMB), mat);
+      const m = new THREE.Mesh(new THREE.CylinderGeometry(LIMB / 2, LIMB / 2, h, 8), mat);
       m.position.y = -h / 2;
       pivot.add(m);
+      const pad = new THREE.Mesh(new THREE.BoxGeometry(LIMB * 1.22, 0.12, LIMB * 1.45), dark);
+      pad.position.y = -h + 0.04;
+      pivot.add(pad);
       this.group.add(pivot);
       return pivot;
     };
     this.legL = limb(pants, LEG_H); this.legL.position.set(-BODY_W / 4, LEG_H, 0);
     this.legR = limb(pants, LEG_H); this.legR.position.set(BODY_W / 4, LEG_H, 0);
-    this.armL = limb(shirt, ARM_H); this.armL.position.set(-(BODY_W / 2 + LIMB / 2), NECK_Y - 0.05, 0);
-    this.armR = limb(shirt, ARM_H); this.armR.position.set(BODY_W / 2 + LIMB / 2, NECK_Y - 0.05, 0);
+    this.armL = limb(cloth, ARM_H); this.armL.position.set(-(BODY_W / 2 + LIMB / 2), NECK_Y - 0.05, 0);
+    this.armR = limb(cloth, ARM_H); this.armR.position.set(BODY_W / 2 + LIMB / 2, NECK_Y - 0.05, 0);
 
     // ---- name tag ----
     this.tag = nameSprite(this.name);
@@ -258,7 +274,7 @@ class Avatar {
     tex.colorSpace = THREE.SRGBColorSpace;
 
     const group = new THREE.Group();
-    const frameMat = new THREE.MeshBasicMaterial({ color: 0x2b2620 });
+    const frameMat = new THREE.MeshBasicMaterial({ color: 0x20262b });
     const centerY = 1.45;
 
     const frame = new THREE.Mesh(new THREE.BoxGeometry(W + 0.14, H + 0.14, 0.07), frameMat);

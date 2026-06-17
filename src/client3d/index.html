@@ -75,7 +75,7 @@
 <!-- ======================= Inventory picker ======================= -->
 <div id="picker" class="overlay hidden">
   <div class="picker-window">
-    <div class="picker-title">World Tools <span class="picker-hint">(legacy sandbox tools are not part of the combat HUD)</span><button id="picker-close" title="Close">✕</button></div>
+    <div class="picker-title">Arena Tools <span class="picker-hint">(advanced room editing stays outside the combat HUD)</span><button id="picker-close" title="Close">✕</button></div>
     <div id="picker-grid"></div>
     <div id="picker-hotbar" class="picker-hotbar"></div>
   </div>
@@ -141,7 +141,7 @@
     <div class="opt-row"><label>Volume: <span id="val-vol">70</span>%</label><input type="range" id="opt-vol" min="0" max="100" step="5" /></div>
     <div class="opt-row checks">
       <button class="mc-button small toggle" id="opt-bob">View Bobbing: ON</button>
-      <button class="mc-button small toggle" id="opt-clouds">Clouds: ON</button>
+      <button class="mc-button small toggle" id="opt-clouds">Atmosphere: ON</button>
       <button class="mc-button small toggle" id="opt-music">Music: ON</button>
       <button class="mc-button small toggle" id="opt-smooth">Smooth Lighting: ON</button>
     </div>
@@ -162,15 +162,15 @@
       <span>Mute mic / camera</span><span>M / V</span>
       <span>Switch camera</span><span>C</span>
       <span>Present screen</span><span>P</span>
-      <span>Jump / Swim up</span><span>SPACE</span>
-      <span>Sneak (edge-safe)</span><span>SHIFT</span>
+      <span>Jump</span><span>SPACE</span>
+      <span>Crouch / slow walk</span><span>SHIFT</span>
       <span>Sprint</span><span>CTRL or double-tap W</span>
-      <span>Fly (toggle)</span><span>Double-tap SPACE</span>
-      <span>Fly up / down</span><span>SPACE / SHIFT</span>
+      <span>Freecam toggle</span><span>Double-tap SPACE</span>
+      <span>Freecam up / down</span><span>SPACE / SHIFT</span>
       <span>Debug info</span><span>F3</span>
       <span>Menu</span><span>ESC</span>
     </div>
-    <div class="controls-note">Voice and video still use distance: step close to talk, step away to leave the conversation.</div>
+    <div class="controls-note">Voice and video use distance: step close to talk, step away to leave the conversation.</div>
     <button class="mc-button" id="btn-controls-done">Done</button>
   </div>
 </div>

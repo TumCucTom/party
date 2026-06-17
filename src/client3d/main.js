@@ -1,11 +1,10 @@
 // ============================================================
-// Main — Block Party: the spatial video chat rebuilt inside a
-// Minecraft-like world. Bootstraps the renderer and the voxel
-// engine, owns the state machine (join → loading → playing ⇄
-// menu), and wires the multiplayer layer: socket.io world sync
-// (seed + shared block edits + player positions), blocky
-// avatars with live webcam faces, and proximity video calls
-// with WebAudio-spatialized voice.
+// Main — Knife Party: spatial video chat inside a tactical
+// first-person combat room. Bootstraps the renderer and hidden
+// voxel physics substrate, owns the state machine (join →
+// loading → playing ⇄ menu), and wires multiplayer state,
+// combat, remote avatars with live webcam face plates, and
+// proximity video calls with WebAudio-spatialized voice.
 // ============================================================
 
 import * as THREE from 'three';
@@ -522,7 +521,7 @@ class Game {
         const who = n
           ? `${n} ${n === 1 ? 'person' : 'people'} here now: ${info.players.slice(0, 4).join(', ')}${n > 4 ? '...' : ''}`
           : 'Nobody here right now';
-        this.ui.setRoomInfo(`${who} · ${info.edits} terrain ${info.edits === 1 ? 'change' : 'changes'}`);
+        this.ui.setRoomInfo(`${who} · ${info.edits} arena ${info.edits === 1 ? 'change' : 'changes'}`);
       }
     } catch {
       if (seq === this._roomInfoSeq) this.ui.setRoomInfo('');
@@ -852,7 +851,7 @@ class Game {
           break;
         case 'KeyF':
           this.player.flying = !this.player.flying;
-          this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
+          this.ui.showToast(this.player.flying ? 'Freecam enabled' : 'Freecam disabled');
           break;
         case 'KeyM':
           this.toggleMic();
@@ -877,7 +876,7 @@ class Game {
           if (now - this.lastSpace < 320) {
             this.player.flying = !this.player.flying;
             if (this.player.flying) this.player.vel.y = 0;
-            this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
+            this.ui.showToast(this.player.flying ? 'Freecam enabled' : 'Freecam disabled');
           }
           this.lastSpace = now;
           break;
@@ -1541,19 +1540,25 @@ class Game {
     const facing = dirs[Math.round(yawDeg / 45) % 8];
     const target = this.currentTarget();
     const biome = BIOME_NAMES[this.world.biomeAt(bx, bz)] ?? '?';
+    const environmentLine = this.arenaMode
+      ? `Arena: tactical yard   Atmosphere: fixed`
+      : `Biome: ${biome}   Time: ${this.sky.clockString()}`;
+    const targetLine = target
+      ? `${this.arenaMode ? 'Collision' : 'Terrain'}: ${BLOCKS[target.id].name} @ ${target.x} ${target.y} ${target.z}`
+      : `${this.arenaMode ? 'Collision' : 'Terrain'}: -`;
     return [
       `Knife Party (Three.js) — ${this.fps} fps`,
       `Room: #${this.room}   Players: ${this.avatars.count() + 1}   Calls: ${this.rtc ? this.rtc.calls.size : 0}`,
       `XYZ: ${p.pos.x.toFixed(2)} / ${p.pos.y.toFixed(2)} / ${p.pos.z.toFixed(2)}`,
       `Cell: ${bx} ${by} ${bz}   Chunk: ${cx} ${cz} [${bx & 15} ${bz & 15}]`,
       `Facing: ${facing} (yaw ${yawDeg.toFixed(1)}°, pitch ${THREE.MathUtils.radToDeg(p.pitch).toFixed(1)}°)`,
-      `Biome: ${biome}   Time: ${this.sky.clockString()}`,
+      environmentLine,
       `Seed: ${this.worldSeed}`,
       `Chunks: ${this.world.countLoaded()} ready / ${this.world.chunks.size} loaded   Edits: ${this.world.editCount}`,
       `Entities: ${this.entities.list.length}   Particles: ${this.particles.list.length}`,
       `Draw calls: ${this.lastDrawInfo.calls}   Tris: ${(this.lastDrawInfo.triangles / 1000).toFixed(1)}k`,
       `Flags: ${p.onGround ? 'ground ' : ''}${p.flying ? 'flying ' : ''}${p.inWater ? 'water ' : ''}${p.sprinting ? 'sprint ' : ''}${p.sneaking ? 'sneak' : ''}`,
-      target ? `Terrain: ${BLOCKS[target.id].name} @ ${target.x} ${target.y} ${target.z}` : 'Terrain: -',
+      targetLine,
     ].join('\n');
   }
 }

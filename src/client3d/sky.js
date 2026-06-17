@@ -1,9 +1,6 @@
 // ============================================================
-// Sky — full day/night cycle (20 minutes like Minecraft):
-// square sun & moon orbiting the player, fading star dome,
-// drifting blocky cloud layer, sky/fog colors with sunrise &
-// sunset tinting, and the global "uDayLight" uniform that
-// dims every baked skylight vertex at night.
+// Sky — default day/night cycle plus a tactical arena mode that
+// suppresses the sandbox celestial/cloud layer.
 // ============================================================
 
 import * as THREE from 'three';
@@ -15,6 +12,8 @@ const DAY_LENGTH = 1200; // seconds for a full cycle (20 min, like MC)
 const DAY_SKY = new THREE.Color(0.47, 0.66, 1.0);
 const NIGHT_SKY = new THREE.Color(0.015, 0.025, 0.07);
 const SUNSET = new THREE.Color(1.0, 0.48, 0.2);
+const ARENA_SKY = new THREE.Color(0.48, 0.55, 0.58);
+const ARENA_FOG = new THREE.Color(0.54, 0.51, 0.43);
 
 export class Sky {
   constructor(scene, uniforms) {
@@ -24,6 +23,8 @@ export class Sky {
     this.dayLight = 1;
     this.viewDistance = 7 * CHUNK;
     this.underwater = false;
+    this.arenaMode = false;
+    this.cloudsWanted = true;
 
     this.skyColor = new THREE.Color();
     this.fogColor = new THREE.Color();
@@ -95,8 +96,19 @@ export class Sky {
 
   setTimeOfDay(t) { this.timeOfDay = ((t % 1) + 1) % 1; }
   setViewDistance(chunks) { this.viewDistance = chunks * CHUNK; }
-  setCloudsVisible(v) { this.clouds.visible = v; }
+  setCloudsVisible(v) {
+    this.cloudsWanted = Boolean(v);
+    this.clouds.visible = this.cloudsWanted && !this.arenaMode;
+  }
   setUnderwater(u) { this.underwater = u; }
+  setArenaMode(v) {
+    this.arenaMode = Boolean(v);
+    this.group.visible = !this.arenaMode;
+    this.clouds.visible = this.cloudsWanted && !this.arenaMode;
+    this.starMat.opacity = 0;
+    this.sun.material.opacity = 0;
+    this.moon.material.opacity = 0;
+  }
 
   /** "HH:MM" — 0.0 timeOfDay corresponds to 06:00. */
   clockString() {
@@ -107,6 +119,22 @@ export class Sky {
   }
 
   update(dt, camPos) {
+    if (this.arenaMode) {
+      this.group.position.copy(camPos);
+      this.uniforms.uDayLight.value = 0.98;
+      this.skyColor.copy(ARENA_SKY);
+      this.fogColor.copy(this.underwater ? new THREE.Color(0.05, 0.18, 0.45) : ARENA_FOG);
+      const fog = this.scene.fog;
+      if (this.underwater) {
+        fog.near = 2;
+        fog.far = 18;
+      } else {
+        fog.near = Math.max(18, this.viewDistance * 0.42);
+        fog.far = Math.max(54, this.viewDistance * 0.78);
+      }
+      return;
+    }
+
     this.timeOfDay = (this.timeOfDay + dt / DAY_LENGTH) % 1;
     const a = this.timeOfDay * Math.PI * 2;
     const sunH = Math.sin(a); // -1..1, height of the sun

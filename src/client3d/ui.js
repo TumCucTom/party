@@ -112,7 +112,7 @@ export class UI {
       });
     };
     toggle('opt-bob', 'bob', 'View Bobbing');
-    toggle('opt-clouds', 'clouds', 'Clouds');
+    toggle('opt-clouds', 'clouds', 'Atmosphere');
     toggle('opt-music', 'music', 'Music');
     toggle('opt-smooth', 'smooth', 'Smooth Lighting');
   }
@@ -124,7 +124,7 @@ export class UI {
     this.$('opt-sens').value = s.sens; this.$('val-sens').textContent = s.sens;
     this.$('opt-vol').value = s.vol; this.$('val-vol').textContent = s.vol;
     this.$('opt-bob').textContent = `View Bobbing: ${s.bob ? 'ON' : 'OFF'}`;
-    this.$('opt-clouds').textContent = `Clouds: ${s.clouds ? 'ON' : 'OFF'}`;
+    this.$('opt-clouds').textContent = `Atmosphere: ${s.clouds ? 'ON' : 'OFF'}`;
     this.$('opt-music').textContent = `Music: ${s.music ? 'ON' : 'OFF'}`;
     this.$('opt-smooth').textContent = `Smooth Lighting: ${s.smooth ? 'ON' : 'OFF'}`;
   }
