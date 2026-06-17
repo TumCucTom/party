@@ -29,6 +29,7 @@ import { Avatars } from './avatar.js';
 import { TouchControls, isTouchDevice } from './touch.js';
 import { Minimap } from './minimap.js';
 import { COMBAT, STATE_SEND_HZ, CALL_DISTANCE } from './constants.js';
+import { TacticalArena, createArenaPlan, prepareArenaCollision } from './arena.js';
 import {
   applyDeath,
   applyHit,
@@ -147,6 +148,11 @@ class Game {
     this.sky = new Sky(this.scene, this.uniforms);
     this.sky.setViewDistance(this.settings.render);
     this.sky.setCloudsVisible(this.settings.clouds);
+    this.arenaMode = true;
+    this.arena = new TacticalArena(this.scene);
+    this.arenaPlan = null;
+    this.roomSpawn = null;
+    this.sky.setArenaMode?.(this.arenaMode);
 
     this.particles = new Particles(this.scene, this.materials.solid);
     this.entities = new Entities({
@@ -647,6 +653,7 @@ class Game {
       this.world.dispose();
       this.entities.clear();
     }
+    this.arena?.dispose();
     this.worldSeed = seed >>> 0;
     this.world = new World({
       seed: this.worldSeed,
@@ -655,13 +662,15 @@ class Game {
       viewRadius: this.settings.render,
       smoothLighting: this.settings.smooth,
     });
+    if (this.arenaMode) this.world.setMeshesVisible(false);
     if (worldEdits) this.world.loadWorldEdits(worldEdits);
     this.world.onEdit = (x, y, z, id) => this.net.sendBlock(x, y, z, id);
     this.entities.setWorld(this.world);
 
     this.minimap.setWorld(this.world);
     this.player = new Player(this.world);
-    this.spawn = this.world.gen.findSpawn();
+    this.roomSpawn = this.world.gen.findSpawn();
+    this.spawn = { ...this.roomSpawn };
     // scatter players around the spawn so a full room doesn't stack up
     if (this.net.id) {
       const h = hashString(this.net.id);
@@ -669,6 +678,40 @@ class Game {
       this.spawn.z += ((h >>> 5) % 17) - 8;
     }
     this.player.teleport(this.spawn.x + 0.5, this.spawn.y + 1, this.spawn.z + 0.5);
+    if (this.arenaMode) this.rebuildArena(this.roomSpawn);
+  }
+
+  rebuildArena(center) {
+    if (!this.arenaMode || !this.arena) return null;
+    const plan = createArenaPlan(center);
+    this.arenaPlan = plan;
+    this.arena.rebuild(plan);
+    return plan;
+  }
+
+  installArenaCollision() {
+    const base = this.roomSpawn || this.spawn;
+    const bx = Math.floor(base.x), bz = Math.floor(base.z);
+    const surfaceY = this.world.surfaceHeight(bx, bz) || Math.floor(base.y);
+    const plan = this.rebuildArena({ x: bx, y: surfaceY, z: bz });
+    if (!plan) return;
+
+    prepareArenaCollision(this.world, plan);
+    this.world.setMeshesVisible(false);
+
+    const sx = THREE.MathUtils.clamp(
+      Math.floor(this.spawn.x),
+      plan.bounds.minX + 3,
+      plan.bounds.maxX - 3,
+    );
+    const sz = THREE.MathUtils.clamp(
+      Math.floor(this.spawn.z),
+      plan.bounds.minZ + 3,
+      plan.bounds.maxZ - 3,
+    );
+    this.spawn = { x: sx, y: plan.floorY, z: sz };
+    this.player.teleport(sx + 0.5, plan.floorY + 1, sz + 0.5);
+    this.player.vel.set(0, 0, 0);
   }
 
   // ============================================================
@@ -676,11 +719,15 @@ class Game {
   // ============================================================
 
   finishLoading() {
-    // snap to the real surface (caves may have carved under the estimate)
-    const bx = Math.floor(this.player.pos.x), bz = Math.floor(this.player.pos.z);
-    let y = WORLD_H - 2;
-    while (y > 1 && !BLOCKS[this.world.getBlock(bx, y, bz)].solid) y--;
-    this.player.teleport(bx + 0.5, y + 1, bz + 0.5);
+    if (this.arenaMode) {
+      this.installArenaCollision();
+    } else {
+      // snap to the real surface (caves may have carved under the estimate)
+      const bx = Math.floor(this.player.pos.x), bz = Math.floor(this.player.pos.z);
+      let y = WORLD_H - 2;
+      while (y > 1 && !BLOCKS[this.world.getBlock(bx, y, bz)].solid) y--;
+      this.player.teleport(bx + 0.5, y + 1, bz + 0.5);
+    }
 
     this.state = 'playing';
     this.ui.hideAllMenus();

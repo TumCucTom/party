@@ -50,6 +50,7 @@ export class World {
     this.dirty = new Set();            // ckeys needing remesh
     this.supportChecks = [];           // cells to re-check after edits (sand, torches…)
     this.stats = { generated: 0, meshed: 0 };
+    this.meshesVisible = true;
 
     // multiplayer: called with (x, y, z, id) for every locally-caused
     // recorded edit so it can be sent to the server. Edits arriving
@@ -361,9 +362,18 @@ export class World {
 
   placeMesh(c, mesh) {
     mesh.position.set(c.cx * CHUNK, 0, c.cz * CHUNK);
+    mesh.visible = this.meshesVisible;
     mesh.matrixAutoUpdate = false;
     mesh.updateMatrix();
     this.scene.add(mesh);
+  }
+
+  setMeshesVisible(visible) {
+    this.meshesVisible = Boolean(visible);
+    for (const c of this.chunks.values()) {
+      if (c.solidMesh) c.solidMesh.visible = this.meshesVisible;
+      if (c.waterMesh) c.waterMesh.visible = this.meshesVisible;
+    }
   }
 
   removeMeshes(c) {

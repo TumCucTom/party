@@ -88,6 +88,18 @@ ok('chunks generate and mesh', () => {
     assert.ok(col.array[i] >= 0 && col.array[i] <= 1.001, `color in range, got ${col.array[i]}`);
   }
 });
+ok('world mesh visibility can be toggled for arena mode', () => {
+  world.setMeshesVisible(false);
+  for (const c of world.chunks.values()) {
+    if (c.solidMesh) assert.strictEqual(c.solidMesh.visible, false);
+    if (c.waterMesh) assert.strictEqual(c.waterMesh.visible, false);
+  }
+  world.setMeshesVisible(true);
+  for (const c of world.chunks.values()) {
+    if (c.solidMesh) assert.strictEqual(c.solidMesh.visible, true);
+    if (c.waterMesh) assert.strictEqual(c.waterMesh.visible, true);
+  }
+});
 ok('bedrock floor everywhere', () => {
   for (let x = 0; x < 16; x++)
     for (let z = 0; z < 16; z++)
