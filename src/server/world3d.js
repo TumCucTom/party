@@ -14,6 +14,7 @@ const path = require('path');
 const Constants = require('../shared/constants');
 
 const MSG = Constants.MSG_TYPES_3D;
+const COMBAT = Constants.COMBAT_3D;
 const DAY_LENGTH = 1200;        // seconds per in-game day (kept in sync by clients)
 const MAX_EDITS_PER_ROOM = 250000;
 const MAX_PLAYERS_PER_ROOM = 40;
@@ -39,6 +40,72 @@ function sanitizeName(name) {
 }
 
 const isFiniteNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+
+const ATTACKS = {
+  slash: {
+    damage: COMBAT.SLASH_DAMAGE,
+    range: COMBAT.SLASH_RANGE,
+    cooldownMs: COMBAT.SLASH_COOLDOWN_MS,
+    coneCos: Math.cos((COMBAT.SLASH_CONE_DEG * Math.PI / 180) / 2),
+  },
+  stab: {
+    damage: COMBAT.STAB_DAMAGE,
+    range: COMBAT.STAB_RANGE,
+    cooldownMs: COMBAT.STAB_COOLDOWN_MS,
+    coneCos: Math.cos((COMBAT.STAB_CONE_DEG * Math.PI / 180) / 2),
+  },
+};
+
+function withCombatState(player) {
+  return Object.assign(player, {
+    hp: COMBAT.MAX_HP,
+    alive: true,
+    kills: 0,
+    deaths: 0,
+    lastAttackAt: 0,
+    respawnAt: 0,
+  });
+}
+
+function serializePlayer(player) {
+  return {
+    id: player.id,
+    name: player.name,
+    x: player.x,
+    y: player.y,
+    z: player.z,
+    yaw: player.yaw,
+    pitch: player.pitch,
+    hp: player.hp,
+    alive: player.alive,
+    kills: player.kills,
+    deaths: player.deaths,
+  };
+}
+
+function forwardFromYaw(yaw) {
+  return {
+    x: -Math.sin(yaw || 0),
+    z: -Math.cos(yaw || 0),
+  };
+}
+
+function isInAttackCone(attacker, target, attack) {
+  const dx = target.x - attacker.x;
+  const dz = target.z - attacker.z;
+  const horizontal = Math.sqrt(dx * dx + dz * dz);
+  if (horizontal < 0.001) return true;
+  const f = forwardFromYaw(attacker.yaw);
+  const dot = ((dx / horizontal) * f.x) + ((dz / horizontal) * f.z);
+  return dot >= attack.coneCos;
+}
+
+function distanceBetweenPlayers(a, b) {
+  const dx = b.x - a.x;
+  const dy = (b.y + 0.9) - (a.y + 0.9);
+  const dz = b.z - a.z;
+  return Math.sqrt(dx * dx + dy * dy + dz * dz);
+}
 
 class Room {
   constructor(name) {
@@ -159,6 +226,7 @@ class World3D {
     socket.on(MSG.BLOCK, (msg) => this.block(socket, msg || {}));
     socket.on(MSG.TNT, (msg) => this.tnt(socket, msg || {}));
     socket.on(MSG.CHAT, (msg) => this.chat(socket, msg || {}));
+    socket.on(MSG.ATTACK, (msg) => this.attack(socket, msg || {}));
     socket.on('disconnect', () => this.leave(socket));
   }
 
@@ -182,9 +250,9 @@ class World3D {
       return;
     }
 
-    const player = {
+    const player = withCombatState({
       id: socket.id, name: sanitizeName(name), x: 0, y: 0, z: 0, yaw: 0, pitch: 0,
-    };
+    });
     r.players.set(socket.id, player);
     r.lastSeen = Date.now();
     this.socketRoom.set(socket.id, roomName);
@@ -192,12 +260,13 @@ class World3D {
 
     socket.emit(MSG.INIT, {
       id: socket.id,
+      me: serializePlayer(player),
       seed: r.seed,
       time: r.timeOfDay(),
       edits: [...r.edits.values()],
-      players: [...r.players.values()].filter((p) => p.id !== socket.id),
+      players: [...r.players.values()].filter((p) => p.id !== socket.id).map(serializePlayer),
     });
-    socket.to(r.channel()).emit(MSG.PLAYER, player);
+    socket.to(r.channel()).emit(MSG.PLAYER, serializePlayer(player));
   }
 
   state(socket, s) {
@@ -244,6 +313,87 @@ class World3D {
     if (p.lastChatAt && now - p.lastChatAt < 750) return; // rate limit
     p.lastChatAt = now;
     socket.to(r.channel()).emit(MSG.CHAT, { id: socket.id, text: clean });
+  }
+
+  attack(socket, { kind }) {
+    const attack = ATTACKS[kind];
+    if (!attack) return;
+    const r = this.roomOf(socket);
+    if (!r) return;
+    const attacker = r.players.get(socket.id);
+    if (!attacker || !attacker.alive) return;
+
+    const now = Date.now();
+    if (attacker.lastAttackAt && now - attacker.lastAttackAt < attack.cooldownMs) return;
+    attacker.lastAttackAt = now;
+
+    const target = this.findAttackTarget(r, attacker, attack);
+    if (!target) return;
+
+    target.hp = Math.max(0, target.hp - attack.damage);
+    const hit = {
+      attackerId: attacker.id,
+      victimId: target.id,
+      damage: attack.damage,
+      hp: target.hp,
+      kind,
+    };
+    this.emitToRoom(socket, r, MSG.HIT, hit);
+
+    if (target.hp <= 0 && target.alive) {
+      target.alive = false;
+      target.deaths += 1;
+      attacker.kills += 1;
+      target.respawnAt = now + COMBAT.RESPAWN_MS;
+      const death = {
+        attackerId: attacker.id,
+        victimId: target.id,
+        attackerKills: attacker.kills,
+        victimDeaths: target.deaths,
+        respawnMs: COMBAT.RESPAWN_MS,
+      };
+      this.emitToRoom(socket, r, MSG.DEATH, death);
+      this.scheduleRespawn(socket, r.name, target.id);
+    }
+  }
+
+  findAttackTarget(room, attacker, attack) {
+    let best = null;
+    let bestDist = Infinity;
+    for (const target of room.players.values()) {
+      if (target.id === attacker.id || !target.alive) continue;
+      const dist = distanceBetweenPlayers(attacker, target);
+      if (dist > attack.range || dist >= bestDist) continue;
+      if (!isInAttackCone(attacker, target, attack)) continue;
+      best = target;
+      bestDist = dist;
+    }
+    return best;
+  }
+
+  scheduleRespawn(sourceSocket, roomName, playerId) {
+    setTimeout(() => {
+      const r = this.rooms.get(roomName);
+      if (!r) return;
+      const p = r.players.get(playerId);
+      if (!p || p.alive) return;
+      p.hp = COMBAT.MAX_HP;
+      p.alive = true;
+      p.respawnAt = 0;
+      const msg = {
+        id: p.id,
+        hp: p.hp,
+        alive: p.alive,
+        deaths: p.deaths,
+        kills: p.kills,
+      };
+      this.emitToRoom(sourceSocket, r, MSG.RESPAWN, msg);
+    }, COMBAT.RESPAWN_MS);
+  }
+
+  emitToRoom(socket, room, event, payload) {
+    socket.emit(event, payload);
+    socket.to(room.channel()).emit(event, payload);
   }
 
   leave(socket) {

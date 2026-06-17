@@ -270,3 +270,119 @@ describe('leaving & cleanup', () => {
     expect(w.rooms.has('r')).toBe(false);
   });
 });
+
+describe('combat', () => {
+  test('players initialize with combat state in init payloads', () => {
+    const w = makeWorld();
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'arena', name: 'A' });
+    const init = s1.lastEmitted(MSG.INIT);
+    expect(init.me).toMatchObject({
+      id: 'aaa', hp: 100, alive: true, kills: 0, deaths: 0,
+    });
+
+    const s2 = mockSocket('bbb');
+    w.join(s2, { room: 'arena', name: 'B' });
+    expect(s2.lastEmitted(MSG.INIT).players[0]).toMatchObject({
+      id: 'aaa', hp: 100, alive: true, kills: 0, deaths: 0,
+    });
+  });
+
+  test('valid slash damages a target and broadcasts hit', () => {
+    const w = makeWorld();
+    const a = mockSocket('attacker');
+    const v = mockSocket('victim');
+    w.join(a, { room: 'arena', name: 'A' });
+    w.join(v, { room: 'arena', name: 'V' });
+    w.state(a, { x: 0, y: 70, z: 0, yaw: 0, pitch: 0 });
+    w.state(v, { x: 0, y: 70, z: -1.6, yaw: Math.PI, pitch: 0 });
+
+    w.attack(a, { kind: 'slash' });
+
+    const victim = w.rooms.get('arena').players.get('victim');
+    expect(victim.hp).toBe(66);
+    expect(a.broadcast).toContainEqual(['w3/arena', MSG.HIT, expect.objectContaining({
+      attackerId: 'attacker', victimId: 'victim', damage: 34, hp: 66, kind: 'slash',
+    })]);
+    expect(a.emitted).toContainEqual([MSG.HIT, expect.objectContaining({
+      attackerId: 'attacker', victimId: 'victim', damage: 34, hp: 66, kind: 'slash',
+    })]);
+  });
+
+  test('attacks outside range or cone are ignored', () => {
+    const w = makeWorld();
+    const a = mockSocket('attacker');
+    const v = mockSocket('victim');
+    w.join(a, { room: 'arena', name: 'A' });
+    w.join(v, { room: 'arena', name: 'V' });
+    w.state(a, { x: 0, y: 70, z: 0, yaw: 0, pitch: 0 });
+    w.state(v, { x: 0, y: 70, z: 4, yaw: 0, pitch: 0 });
+    w.attack(a, { kind: 'slash' });
+    expect(w.rooms.get('arena').players.get('victim').hp).toBe(100);
+
+    w.state(v, { x: 2, y: 70, z: 0, yaw: 0, pitch: 0 });
+    w.attack(a, { kind: 'stab' });
+    expect(w.rooms.get('arena').players.get('victim').hp).toBe(100);
+    expect(a.broadcast.filter(b => b[1] === MSG.HIT)).toHaveLength(0);
+  });
+
+  test('attack cooldown blocks repeated strikes', () => {
+    const w = makeWorld();
+    const a = mockSocket('attacker');
+    const v = mockSocket('victim');
+    w.join(a, { room: 'arena', name: 'A' });
+    w.join(v, { room: 'arena', name: 'V' });
+    w.state(a, { x: 0, y: 70, z: 0, yaw: 0, pitch: 0 });
+    w.state(v, { x: 0, y: 70, z: -1.6, yaw: Math.PI, pitch: 0 });
+    w.attack(a, { kind: 'slash' });
+    w.attack(a, { kind: 'slash' });
+    expect(w.rooms.get('arena').players.get('victim').hp).toBe(66);
+    expect(a.broadcast.filter(b => b[1] === MSG.HIT)).toHaveLength(1);
+  });
+
+  test('death increments score and respawn restores the victim', () => {
+    jest.useFakeTimers();
+    let now = 1000;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const w = makeWorld();
+    const a = mockSocket('attacker');
+    const v = mockSocket('victim');
+    w.join(a, { room: 'arena', name: 'A' });
+    w.join(v, { room: 'arena', name: 'V' });
+    w.state(a, { x: 0, y: 70, z: 0, yaw: 0, pitch: 0 });
+    w.state(v, { x: 0, y: 70, z: -1.6, yaw: Math.PI, pitch: 0 });
+
+    w.attack(a, { kind: 'stab' });
+    jest.advanceTimersByTime(900);
+    now += 900;
+    w.attack(a, { kind: 'stab' });
+
+    const room = w.rooms.get('arena');
+    expect(room.players.get('attacker')).toMatchObject({ kills: 1 });
+    expect(room.players.get('victim')).toMatchObject({ hp: 0, alive: false, deaths: 1 });
+    expect(a.broadcast).toContainEqual(['w3/arena', MSG.DEATH, expect.objectContaining({
+      attackerId: 'attacker', victimId: 'victim',
+    })]);
+
+    jest.advanceTimersByTime(3000);
+    expect(room.players.get('victim')).toMatchObject({ hp: 100, alive: true, deaths: 1 });
+    expect(a.broadcast).toContainEqual(['w3/arena', MSG.RESPAWN, expect.objectContaining({
+      id: 'victim', hp: 100, alive: true,
+    })]);
+    nowSpy.mockRestore();
+    jest.useRealTimers();
+  });
+
+  test('combat events stay inside their room', () => {
+    const w = makeWorld();
+    const a = mockSocket('attacker');
+    const v = mockSocket('victim');
+    w.join(a, { room: 'one', name: 'A' });
+    w.join(v, { room: 'two', name: 'V' });
+    w.state(a, { x: 0, y: 70, z: 0, yaw: 0, pitch: 0 });
+    w.state(v, { x: 0, y: 70, z: -1.6, yaw: Math.PI, pitch: 0 });
+    w.attack(a, { kind: 'slash' });
+    expect(w.rooms.get('two').players.get('victim').hp).toBe(100);
+    expect(a.broadcast.filter(b => b[1] === MSG.HIT)).toHaveLength(0);
+  });
+});
