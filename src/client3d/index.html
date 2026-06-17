@@ -3,14 +3,14 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
-<title>Block Party — spatial video chat in a voxel world</title>
-<meta property="description" content="A spatially aware video call, now in a Minecraft-like world." />
-<meta property="og:title" content="Block Party" />
-<meta property="og:description" content="Walk, build and talk — video chat with real 3D presence." />
+<title>Knife Party — spatial video chat with first-person combat</title>
+<meta property="description" content="Spatial video chat with first-person knife combat." />
+<meta property="og:title" content="Knife Party" />
+<meta property="og:description" content="Walk up to talk, square up to duel, stay in the room together." />
 <link rel="shortcut icon" href="/assets/icon64.png" />
 <link rel="preconnect" href="https://fonts.googleapis.com" />
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&display=swap" rel="stylesheet" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=Rajdhani:wght@500;600;700&display=swap" rel="stylesheet" />
 <!-- absolute URLs: this page is served at both / and /world/ -->
 <link rel="stylesheet" href="/world/style.css" />
 <script src="/socket.io/socket.io.js"></script>
@@ -29,8 +29,26 @@
 <!-- ======================= HUD (in game) ======================= -->
 <div id="hud" class="hidden">
   <div id="crosshair"></div>
+  <div id="hit-marker"></div>
   <div id="item-name"></div>
   <div id="hotbar"></div>
+  <div id="combat-hud">
+    <div id="combat-health" class="combat-panel">
+      <div class="combat-label">Health</div>
+      <div class="health-row"><span id="combat-health-value">100</span><div class="health-track"><div id="combat-health-fill"></div></div></div>
+      <div id="combat-state">Knife ready</div>
+    </div>
+    <div id="weapon-panel" class="combat-panel">
+      <div class="weapon-title">Knife</div>
+      <div class="cooldown-row"><span id="slash-label">Slash</span><div class="cooldown-track"><div id="slash-cooldown"></div></div></div>
+      <div class="cooldown-row"><span id="stab-label">Stab</span><div class="cooldown-track"><div id="stab-cooldown"></div></div></div>
+    </div>
+    <div id="score-panel" class="combat-panel">
+      <div class="combat-label">K / D</div>
+      <div id="combat-score">0 / 0</div>
+      <div id="combat-feed"></div>
+    </div>
+  </div>
   <div id="debug" class="hidden"></div>
   <div id="underwater-overlay"></div>
   <div id="damage-vignette"></div>
@@ -57,7 +75,7 @@
 <!-- ======================= Inventory picker ======================= -->
 <div id="picker" class="overlay hidden">
   <div class="picker-window">
-    <div class="picker-title">Select Block <span class="picker-hint">(click a block to put it in the selected hotbar slot — E / Esc to close)</span><button id="picker-close" title="Close">✕</button></div>
+    <div class="picker-title">World Tools <span class="picker-hint">(legacy sandbox tools are not part of the combat HUD)</span><button id="picker-close" title="Close">✕</button></div>
     <div id="picker-grid"></div>
     <div id="picker-hotbar" class="picker-hotbar"></div>
   </div>
@@ -66,8 +84,8 @@
 <!-- ======================= Join screen ======================= -->
 <div id="title-screen" class="overlay">
   <div class="title-stack">
-    <div class="mc-logo">BLOCK PARTY</div>
-    <div class="mc-sublogo">SPATIAL VIDEO CHAT</div>
+    <div class="mc-logo">KNIFE PARTY</div>
+    <div class="mc-sublogo">SPATIAL VIDEO COMBAT</div>
     <div class="splash" id="splash-text">Talk to your neighbors!</div>
     <div class="join-card">
       <div class="join-cam-holder">
@@ -76,17 +94,17 @@
       </div>
       <div class="join-fields">
         <label for="name-input">YOUR NAME</label>
-        <input id="name-input" type="text" maxlength="16" placeholder="Steve" spellcheck="false" autocomplete="off" />
-        <label for="room-input">ROOM CODE <span class="field-hint">(same room = same world)</span></label>
+        <input id="name-input" type="text" maxlength="16" placeholder="Rook" spellcheck="false" autocomplete="off" />
+        <label for="room-input">ROOM CODE <span class="field-hint">(same room = same arena)</span></label>
         <input id="room-input" type="text" maxlength="32" value="public" spellcheck="false" autocomplete="off" />
         <div id="room-info"></div>
-        <button class="mc-button" id="btn-play">Join World</button>
+        <button class="mc-button" id="btn-play">Join Room</button>
         <button class="mc-button small" id="btn-title-controls">Controls</button>
         <div id="join-status"></div>
       </div>
     </div>
     <div class="title-footer">
-      <span>walk up to people to start talking — walk away to leave the conversation</span>
+      <span>walk up to talk — slash or stab when the room turns into a duel</span>
       <span>made with ❤️ by <a href="https://twitter.com/souramoo">@souramoo</a> · <a href="/join">classic 2D version</a></span>
     </div>
   </div>
@@ -95,9 +113,9 @@
 <!-- ======================= Loading screen ======================= -->
 <div id="loading-screen" class="overlay hidden">
   <div class="loading-stack">
-    <div class="loading-text">Building terrain…</div>
+    <div class="loading-text">Preparing room…</div>
     <div class="loading-bar"><div id="loading-fill"></div></div>
-    <div class="loading-tip" id="loading-tip">Tip: Double-tap SPACE to fly</div>
+    <div class="loading-tip" id="loading-tip">Tip: Left click slashes quickly</div>
   </div>
 </div>
 
@@ -105,11 +123,11 @@
 <div id="pause-menu" class="overlay hidden">
   <div class="menu-stack">
     <div class="menu-title">Menu</div>
-    <div class="menu-note">(the party keeps going while you're here)</div>
-    <button class="mc-button" id="btn-resume">Back to the Party</button>
+    <div class="menu-note">(voice, video, and the match continue while you're here)</div>
+    <button class="mc-button" id="btn-resume">Back to the Room</button>
     <button class="mc-button" id="btn-options">Options…</button>
     <button class="mc-button" id="btn-controls">Controls</button>
-    <button class="mc-button" id="btn-quit">Leave World</button>
+    <button class="mc-button" id="btn-quit">Leave Room</button>
   </div>
 </div>
 
@@ -138,6 +156,8 @@
     <div class="controls-grid">
       <span>Move</span><span>W A S D</span>
       <span>Talk to someone</span><span>WALK UP TO THEM</span>
+      <span>Slash</span><span>LEFT CLICK</span>
+      <span>Stab</span><span>RIGHT CLICK</span>
       <span>Text chat</span><span>T or ENTER</span>
       <span>Mute mic / camera</span><span>M / V</span>
       <span>Switch camera</span><span>C</span>
@@ -147,15 +167,10 @@
       <span>Sprint</span><span>CTRL or double-tap W</span>
       <span>Fly (toggle)</span><span>Double-tap SPACE</span>
       <span>Fly up / down</span><span>SPACE / SHIFT</span>
-      <span>Break block</span><span>Hold LEFT CLICK</span>
-      <span>Place block</span><span>RIGHT CLICK</span>
-      <span>Pick block</span><span>MIDDLE CLICK</span>
-      <span>Select slot</span><span>1–9 or MOUSE WHEEL</span>
-      <span>Block inventory</span><span>E</span>
       <span>Debug info</span><span>F3</span>
       <span>Menu</span><span>ESC</span>
     </div>
-    <div class="controls-note">Everyone in the room shares the same world — what you build, they see. TNT explodes when you break it!</div>
+    <div class="controls-note">Voice and video still use distance: step close to talk, step away to leave the conversation.</div>
     <button class="mc-button" id="btn-controls-done">Done</button>
   </div>
 </div>

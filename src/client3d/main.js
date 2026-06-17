@@ -221,9 +221,7 @@ class Game {
           if (this.state === 'playing' && !this.pickerOpen && !this.chatOpen) this.openChat();
         },
         onPicker: () => {
-          if (this.state !== 'playing' || this.chatOpen) return;
-          if (this.pickerOpen) this.closePicker(false);
-          else this.openPicker();
+          if (this.state === 'playing' && !this.chatOpen) this.ui.showToast('Knife equipped');
         },
       });
     }
@@ -512,13 +510,13 @@ class Game {
       const info = await res.json();
       if (seq !== this._roomInfoSeq || this.state !== 'title') return; // stale
       if (!info.exists) {
-        this.ui.setRoomInfo('✨ a fresh, untouched world awaits');
+        this.ui.setRoomInfo('Fresh room — no one has stepped in yet');
       } else {
         const n = info.players.length;
         const who = n
-          ? `👥 ${n} ${n === 1 ? 'person' : 'people'} here now: ${info.players.slice(0, 4).join(', ')}${n > 4 ? '…' : ''}`
-          : '👥 nobody here right now';
-        this.ui.setRoomInfo(`${who} · 🧱 ${info.edits} block ${info.edits === 1 ? 'edit' : 'edits'}`);
+          ? `${n} ${n === 1 ? 'person' : 'people'} here now: ${info.players.slice(0, 4).join(', ')}${n > 4 ? '...' : ''}`
+          : 'Nobody here right now';
+        this.ui.setRoomInfo(`${who} · ${info.edits} terrain ${info.edits === 1 ? 'change' : 'changes'}`);
       }
     } catch {
       if (seq === this._roomInfoSeq) this.ui.setRoomInfo('');
@@ -1430,7 +1428,12 @@ class Game {
     const canInteract = (this.locked || this.touchMode) &&
       !this.pickerOpen && !menuOpen && !this.chatOpen;
     if (canInteract) this.updateCombat(dt);
-    else { this.outline.visible = false; this.crack.visible = false; }
+    else {
+      this.outline.visible = false;
+      this.crack.visible = false;
+      this.hitMarkerT = Math.max(0, this.hitMarkerT - dt);
+      this.ui.updateCombatHud?.(this.combat, this.combatHudSnapshot());
+    }
 
     this.world.update(p.pos.x, p.pos.z, 5);
     this.processSupportChecks();
@@ -1492,10 +1495,10 @@ class Game {
     const target = this.currentTarget();
     const biome = BIOME_NAMES[this.world.biomeAt(bx, bz)] ?? '?';
     return [
-      `Block Party (Three.js) — ${this.fps} fps`,
+      `Knife Party (Three.js) — ${this.fps} fps`,
       `Room: #${this.room}   Players: ${this.avatars.count() + 1}   Calls: ${this.rtc ? this.rtc.calls.size : 0}`,
       `XYZ: ${p.pos.x.toFixed(2)} / ${p.pos.y.toFixed(2)} / ${p.pos.z.toFixed(2)}`,
-      `Block: ${bx} ${by} ${bz}   Chunk: ${cx} ${cz} [${bx & 15} ${bz & 15}]`,
+      `Cell: ${bx} ${by} ${bz}   Chunk: ${cx} ${cz} [${bx & 15} ${bz & 15}]`,
       `Facing: ${facing} (yaw ${yawDeg.toFixed(1)}°, pitch ${THREE.MathUtils.radToDeg(p.pitch).toFixed(1)}°)`,
       `Biome: ${biome}   Time: ${this.sky.clockString()}`,
       `Seed: ${this.worldSeed}`,
@@ -1503,7 +1506,7 @@ class Game {
       `Entities: ${this.entities.list.length}   Particles: ${this.particles.list.length}`,
       `Draw calls: ${this.lastDrawInfo.calls}   Tris: ${(this.lastDrawInfo.triangles / 1000).toFixed(1)}k`,
       `Flags: ${p.onGround ? 'ground ' : ''}${p.flying ? 'flying ' : ''}${p.inWater ? 'water ' : ''}${p.sprinting ? 'sprint ' : ''}${p.sneaking ? 'sneak' : ''}`,
-      target ? `Target: ${BLOCKS[target.id].name} @ ${target.x} ${target.y} ${target.z}` : 'Target: —',
+      target ? `Terrain: ${BLOCKS[target.id].name} @ ${target.x} ${target.y} ${target.z}` : 'Terrain: -',
     ].join('\n');
   }
 }

@@ -1,33 +1,33 @@
 // ============================================================
 // UI — DOM chrome: title screen with splash text, loading bar,
-// hotbar + item toast, inventory picker, pause/options/controls
+// combat status, proximity room status, pause/options/controls
 // menus and the F3 debug readout.
 // ============================================================
 
 import { BLOCKS, PALETTE } from './blocks.js';
 
 const SPLASHES = [
-  'Talk to your neighbors!',
+  'Talk close. Fight closer.',
   'Spatially aware!',
-  'Walk away from boring chats!',
-  'Now with 100% more blocks!',
-  'Your face on a cube!',
-  'Punch the TNT!',
-  'Double-tap SPACE to fly!',
-  'Build a meeting room!',
-  'No mute button needed!',
-  'Whisper from a distance!',
+  'Video chat with edge.',
+  'Face to face duels.',
+  'Walk away to leave the call.',
+  'Slash fast, stab sure.',
+  'Keep your camera on.',
+  'Every room is a ring.',
+  'Voice falls off with distance.',
+  'No lobby required.',
 ];
 
 const TIPS = [
   'Tip: Walk up to someone to start talking',
   'Tip: Voices get quieter with distance',
-  'Tip: Everyone in the room shares this world',
-  'Tip: Double-tap SPACE to fly',
+  'Tip: Left click slashes quickly',
+  'Tip: Right click stabs harder',
   'Tip: Hold CTRL (or double-tap W) to sprint',
-  'Tip: Press E to choose any block',
-  'Tip: TNT explodes when you break it…',
-  'Tip: Torches light up caves',
+  'Tip: Text chat still works with T or ENTER',
+  'Tip: Screen share still appears beside your avatar',
+  'Tip: Step away when the conversation is over',
 ];
 
 export class UI {
@@ -214,6 +214,45 @@ export class UI {
     el.style.opacity = '1';
     clearTimeout(this._toastTimer);
     this._toastTimer = setTimeout(() => { el.style.opacity = '0'; }, 1400);
+  }
+
+  updateCombatHud(state, snapshot = {}) {
+    const root = this.$('combat-hud');
+    if (!root || !state?.me) return;
+    const me = state.me;
+    const hp = Math.max(0, Math.round(me.hp ?? 0));
+    const hpFrac = Math.max(0, Math.min(1, hp / 100));
+
+    this.$('combat-health-value').textContent = String(hp);
+    this.$('combat-health-fill').style.width = `${Math.round(hpFrac * 100)}%`;
+    this.$('combat-health-fill').classList.toggle('critical', hp <= 34);
+    this.$('combat-score').textContent = `${me.kills || 0} / ${me.deaths || 0}`;
+    this.$('combat-state').textContent = me.alive === false ? 'Respawning' : 'Knife ready';
+
+    const slash = Math.round((snapshot.slashReady ?? 1) * 100);
+    const stab = Math.round((snapshot.stabReady ?? 1) * 100);
+    this.$('slash-cooldown').style.width = `${slash}%`;
+    this.$('stab-cooldown').style.width = `${stab}%`;
+    this.$('slash-label').textContent = slash >= 100 ? 'Slash' : `Slash ${slash}%`;
+    this.$('stab-label').textContent = stab >= 100 ? 'Stab' : `Stab ${stab}%`;
+    this.$('hit-marker').classList.toggle('active', Boolean(snapshot.hitMarker));
+
+    const feed = this.$('combat-feed');
+    feed.innerHTML = '';
+    for (const entry of state.feed.slice(0, 4)) {
+      const row = document.createElement('div');
+      row.className = `feed-row ${entry.type}`;
+      if (entry.type === 'death') {
+        row.textContent = entry.attackerId === me.id ? 'You eliminated a player' :
+          entry.victimId === me.id ? 'You were eliminated' : 'Elimination nearby';
+      } else if (entry.type === 'hit') {
+        row.textContent = entry.attackerId === me.id ? `${entry.kind}: ${entry.damage}` :
+          entry.victimId === me.id ? `Hit taken: ${entry.damage}` : 'Hit nearby';
+      } else {
+        row.textContent = entry.id === me.id ? 'Respawned' : 'Player respawned';
+      }
+      feed.appendChild(row);
+    }
   }
 
   // ----------------------------------------------------------

@@ -161,6 +161,33 @@ class Avatar {
     this.tag.position.y = NECK_Y + HEAD + 0.35;
     this.group.add(this.tag);
 
+    // ---- combat state ----
+    this.combat = { hp: 100, alive: true, hitT: 0 };
+    this.hpGroup = new THREE.Group();
+    this.hpGroup.position.y = NECK_Y + HEAD + 0.18;
+    const hpBack = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.78, 0.07),
+      new THREE.MeshBasicMaterial({ color: 0x0b0d10, transparent: true, opacity: 0.78, depthTest: false }),
+    );
+    this.hpGroup.add(hpBack);
+    this.hpFill = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.68, 0.038),
+      new THREE.MeshBasicMaterial({ color: 0x5fb3b3, transparent: true, opacity: 0.95, depthTest: false }),
+    );
+    this.hpFill.position.z = 0.002;
+    this.hpGroup.add(this.hpFill);
+    this.hpGroup.visible = false;
+    this.group.add(this.hpGroup);
+
+    this.hitFlash = new THREE.Mesh(
+      new THREE.BoxGeometry(0.92, 1.9, 0.56),
+      new THREE.MeshBasicMaterial({
+        color: 0xd94b3d, transparent: true, opacity: 0, depthWrite: false,
+      }),
+    );
+    this.hitFlash.position.y = 0.95;
+    this.group.add(this.hitFlash);
+
     // ---- chat bubble ----
     this.bubble = null;
     this._chatTimer = 0;
@@ -294,6 +321,19 @@ class Avatar {
     this.bubble = null;
   }
 
+  setCombatState(state = {}) {
+    const prevHp = this.combat.hp;
+    if (Number.isFinite(state.hp)) this.combat.hp = state.hp;
+    if (typeof state.alive === 'boolean') this.combat.alive = state.alive;
+    if (this.combat.hp < prevHp) this.combat.hitT = 0.35;
+
+    const frac = Math.max(0, Math.min(1, this.combat.hp / 100));
+    this.hpGroup.visible = frac < 1 || !this.combat.alive;
+    this.hpFill.scale.x = frac;
+    this.hpFill.position.x = -0.34 * (1 - frac);
+    this.hpFill.material.color.setHex(frac <= 0.34 ? 0xd94b3d : 0x5fb3b3);
+  }
+
   update(dt) {
     const k = Math.min(1, dt * 10);
     this.group.position.lerp(this.target, k);
@@ -301,6 +341,10 @@ class Avatar {
     this.pitch += (this.targetPitch - this.pitch) * k;
     this.group.rotation.y = this.yaw;
     this.headGroup.rotation.x = this.pitch;
+    this.group.scale.y += ((this.combat.alive ? 1 : 0.58) - this.group.scale.y) * k;
+    this.group.rotation.z = (this.combat.alive ? 0 : 0.22);
+    this.combat.hitT = Math.max(0, this.combat.hitT - dt);
+    this.hitFlash.material.opacity = this.combat.hitT * 0.85;
 
     // walk swing
     this.walkCycle += this.speed * dt * 2.4;
@@ -349,6 +393,7 @@ export class Avatars {
   setVideo(id, videoEl) { this.map.get(id)?.setVideo(videoEl); }
   clearVideo(id) { this.map.get(id)?.clearVideo(); }
   setChat(id, text) { this.map.get(id)?.setChat(text); }
+  setCombatState(id, state) { this.map.get(id)?.setCombatState(state); }
   setScreen(id, videoEl) { this.map.get(id)?.setScreen(videoEl); }
   clearScreen(id) { this.map.get(id)?.clearScreen(); }
 
