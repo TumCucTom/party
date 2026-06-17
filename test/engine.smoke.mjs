@@ -20,6 +20,11 @@ import {
   createCombatState,
   upsertCombatPlayer,
 } from '../src/client3d/combat.js';
+import {
+  ARENA_MATERIAL_TAGS,
+  arenaCollisionEdits,
+  createArenaPlan,
+} from '../src/client3d/arena.js';
 
 const fakeScene = { add() {}, remove() {} };
 const fakeMaterials = { solid: {}, water: {} };
@@ -259,6 +264,40 @@ ok('cooldown fraction is clamped', () => {
   assert.strictEqual(cooldownFraction(1200, 1000, 400), 0.5);
   assert.strictEqual(cooldownFraction(2000, 1000, 400), 1);
   assert.strictEqual(cooldownFraction(2000, 0, 400), 1);
+});
+
+console.log('— tactical arena —');
+ok('arena plan is finite and keeps spawn inside bounds', () => {
+  const plan = createArenaPlan({ x: SX, y: groundH, z: SZ });
+  assert.ok(Number.isFinite(plan.center.x));
+  assert.ok(Number.isFinite(plan.center.y));
+  assert.ok(Number.isFinite(plan.center.z));
+  assert.ok(plan.bounds.minX < plan.bounds.maxX);
+  assert.ok(plan.bounds.minZ < plan.bounds.maxZ);
+  assert.ok(plan.spawn.x > plan.bounds.minX && plan.spawn.x < plan.bounds.maxX);
+  assert.ok(plan.spawn.z > plan.bounds.minZ && plan.spawn.z < plan.bounds.maxZ);
+  for (const prop of plan.props) {
+    for (const n of [...prop.position, ...prop.size]) assert.ok(Number.isFinite(n));
+    assert.ok(prop.size[0] > 0 && prop.size[1] > 0 && prop.size[2] > 0);
+  }
+});
+
+ok('arena collision edits include floor and perimeter blockers', () => {
+  const plan = createArenaPlan({ x: SX, y: groundH, z: SZ });
+  const edits = arenaCollisionEdits(plan);
+  assert.ok(edits.length > 1000, 'collision substrate is substantial');
+  const floor = edits.filter((e) => e.y === plan.floorY && e.id !== B.AIR);
+  const wall = edits.filter((e) => e.y > plan.floorY && e.id !== B.AIR);
+  const clear = edits.filter((e) => e.y > plan.floorY && e.id === B.AIR);
+  assert.ok(floor.length > 100, 'floor blockers exist');
+  assert.ok(wall.length > 100, 'wall/cover blockers exist');
+  assert.ok(clear.length > 100, 'play volume is cleared');
+});
+
+ok('arena material tags avoid minecraft terrain surfaces', () => {
+  for (const tag of ARENA_MATERIAL_TAGS) {
+    assert.ok(!/grass|dirt|leaves|ore|flower|log/i.test(tag), tag);
+  }
 });
 
 console.log(`\nAll ${passed} smoke tests passed ✔`);
