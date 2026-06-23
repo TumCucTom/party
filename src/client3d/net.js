@@ -28,7 +28,10 @@ export class Net {
   connect() {
     if (this.socket) return Promise.resolve();
     const proto = window.location.protocol.includes('https') ? 'wss' : 'ws';
-    this.socket = window.io(`${proto}://${window.location.host}`, { reconnection: false });
+    this.socket = window.io(`${proto}://${window.location.host}`, {
+      reconnection: false,
+      transports: ['websocket'],
+    });
 
     this.socket.on(MSG.INIT, (msg) => { this.id = msg.id; this.onInit?.(msg); });
     this.socket.on(MSG.PLAYER, (msg) => this.onPlayerJoin?.(msg));

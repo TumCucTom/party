@@ -9,7 +9,8 @@ class Game {
     this.bullets = [];
     this.lastUpdateTime = Date.now();
     this.shouldSendUpdate = false;
-    setInterval(this.update.bind(this), 1000 / 40);
+    const updateLoop = setInterval(this.update.bind(this), 1000 / 40);
+    if (updateLoop.unref) updateLoop.unref();
   }
 
   addPlayer(socket, joinData) {

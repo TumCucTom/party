@@ -215,12 +215,6 @@ class Game {
       document.body.classList.add('touch');
       this.touch = new TouchControls({
         onLook: (dx, dy) => this.touchLook(dx, dy),
-        onToggleFly: () => {
-          if (this.state !== 'playing') return;
-          this.player.flying = !this.player.flying;
-          if (this.player.flying) this.player.vel.y = 0;
-          this.ui.showToast(this.player.flying ? 'Flying enabled' : 'Flying disabled');
-        },
         onMenu: () => { if (this.state === 'playing') this.pause(); },
         onChat: () => {
           if (this.state === 'playing' && !this.pickerOpen && !this.chatOpen) this.openChat();
@@ -239,7 +233,6 @@ class Game {
     this.keys = new Set();
     this.sprintLatch = false;
     this.lastW = 0;
-    this.lastSpace = 0;
     this.mining = false;
     this.miningCell = null;
     this.miningProgress = 0;
@@ -544,6 +537,7 @@ class Game {
     if (window.history.pushState) window.history.pushState(null, null, `#${room}`);
 
     this.audio.ensure();
+    this.requestLandscapePlayMode();
     this.joining = true;
     this.ui.setJoinStatus('Connecting…');
     this.net.connect()
@@ -751,7 +745,23 @@ class Game {
     this.ui.hideAllMenus();
     if (this.pickerOpen) this.closePicker(false);
     this.state = 'playing';
+    this.requestLandscapePlayMode();
     this.lockPointer();
+  }
+
+  requestLandscapePlayMode() {
+    if (!this.touchMode) return;
+    try {
+      const root = document.documentElement;
+      if (!document.fullscreenElement && root.requestFullscreen) {
+        root.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+      }
+    } catch { /* not supported */ }
+    try {
+      if (screen.orientation && screen.orientation.lock) {
+        screen.orientation.lock('landscape').catch(() => {});
+      }
+    } catch { /* not supported */ }
   }
 
   leaveWorld() {
@@ -851,10 +861,6 @@ class Game {
           this.debugVisible = !this.debugVisible;
           if (!this.debugVisible) this.ui.setDebug(false);
           break;
-        case 'KeyF':
-          this.player.flying = !this.player.flying;
-          this.ui.showToast(this.player.flying ? 'Freecam enabled' : 'Freecam disabled');
-          break;
         case 'KeyM':
           this.toggleMic();
           break;
@@ -874,13 +880,6 @@ class Game {
           break;
         case 'Space': {
           e.preventDefault();
-          const now = performance.now();
-          if (now - this.lastSpace < 320) {
-            this.player.flying = !this.player.flying;
-            if (this.player.flying) this.player.vel.y = 0;
-            this.ui.showToast(this.player.flying ? 'Freecam enabled' : 'Freecam disabled');
-          }
-          this.lastSpace = now;
           break;
         }
         case 'KeyW': {

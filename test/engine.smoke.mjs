@@ -5,6 +5,7 @@
 // ============================================================
 
 import assert from 'node:assert';
+import { readFileSync } from 'node:fs';
 import * as THREE from 'three';
 import { SimplexNoise, hashString } from '../src/client3d/noise.js';
 import { B, BLOCKS, PALETTE } from '../src/client3d/blocks.js';
@@ -12,6 +13,7 @@ import { WorldGen, CHUNK, WORLD_H, SEA, BIOME_NAMES } from '../src/client3d/worl
 import { World } from '../src/client3d/world.js';
 import { buildBlockGeometry } from '../src/client3d/mesher.js';
 import { Player, raycastVoxel } from '../src/client3d/player.js';
+import { RTC_CONFIG } from '../src/client3d/rtc.js';
 import {
   applyDeath,
   applyHit,
@@ -28,6 +30,10 @@ import {
 
 const fakeScene = { add() {}, remove() {} };
 const fakeMaterials = { solid: {}, water: {} };
+const styleCss = readFileSync(new URL('../src/client3d/style.css', import.meta.url), 'utf8');
+const mainJs = readFileSync(new URL('../src/client3d/main.js', import.meta.url), 'utf8');
+const touchJs = readFileSync(new URL('../src/client3d/touch.js', import.meta.url), 'utf8');
+const clientHtml = readFileSync(new URL('../src/client3d/index.html', import.meta.url), 'utf8');
 
 let passed = 0;
 function ok(name, fn) {
@@ -188,6 +194,32 @@ ok('player collides with walls', () => {
   world.setBlock(SX + 2, groundH + 2, SZ, B.AIR);
 });
 
+ok('sprinting covers more than 7 blocks per second on flat ground', () => {
+  for (let dz = -12; dz <= 2; dz++) {
+    world.setBlock(SX, groundH, SZ + dz, B.STONE);
+    for (let y = groundH + 1; y <= groundH + 3; y++) {
+      world.setBlock(SX, y, SZ + dz, B.AIR);
+    }
+  }
+  const p = new Player(world);
+  p.teleport(SX + 0.5, groundH + 1, SZ + 0.5);
+  p.sprinting = true;
+  const input = { forward: true, back: false, left: false, right: false, jump: false, sneak: false };
+  for (let i = 0; i < 60; i++) p.update(1 / 60, input);
+  const distance = (SZ + 0.5) - p.pos.z;
+  assert.ok(distance > 7, `sprint distance should feel fast, got ${distance.toFixed(2)} blocks`);
+});
+
+
+console.log('— rtc —');
+ok('WebRTC config includes a TURN relay for restrictive networks', () => {
+  const servers = RTC_CONFIG.iceServers || [];
+  assert.ok(
+    servers.some((server) => String(server.urls || server.url || '').startsWith('turn:')),
+    'expected at least one TURN relay',
+  );
+});
+
 
 console.log('— multiplayer edit sync —');
 ok('local edits fire onEdit; remote edits do not', () => {
@@ -310,6 +342,28 @@ ok('arena material tags avoid minecraft terrain surfaces', () => {
   for (const tag of ARENA_MATERIAL_TAGS) {
     assert.ok(!/grass|dirt|leaves|ore|flower|log/i.test(tag), tag);
   }
+});
+
+console.log('— mobile hud —');
+ok('touch combat HUD is docked above the mobile controls', () => {
+  assert.match(styleCss, /body\.touch #combat-hud\s*{[^}]*top:\s*calc\(env\(safe-area-inset-top\)\s*\+\s*56px\)/s);
+  assert.match(styleCss, /body\.touch #combat-hud\s*{[^}]*bottom:\s*auto/s);
+  assert.match(styleCss, /body\.touch #combat-hud\s*{[^}]*grid-template-columns:\s*minmax\(92px,\s*116px\)\s*minmax\(150px,\s*1fr\)/s);
+});
+
+ok('flying controls are not exposed in the 3D client UI', () => {
+  assert.doesNotMatch(mainJs, /player\.flying\s*=\s*!this\.player\.flying/);
+  assert.doesNotMatch(touchJs, /onToggleFly|_lastJumpTap/);
+  assert.doesNotMatch(clientHtml, /Freecam|Double-tap SPACE/i);
+});
+
+ok('touch devices are steered into landscape play', () => {
+  assert.match(clientHtml, /id="orientation-lock"/);
+  assert.match(styleCss, /@media\s*\(pointer:\s*coarse\)\s*and\s*\(orientation:\s*portrait\)/);
+  assert.match(styleCss, /body\.touch #orientation-lock\s*{[^}]*display:\s*flex/s);
+  assert.match(styleCss, /@media\s*\(pointer:\s*coarse\)\s*and\s*\(orientation:\s*landscape\)\s*and\s*\(max-height:\s*520px\)/);
+  assert.match(mainJs, /requestLandscapePlayMode\(\)/);
+  assert.match(mainJs, /screen\.orientation\.lock\('landscape'\)/);
 });
 
 console.log(`\nAll ${passed} smoke tests passed ✔`);

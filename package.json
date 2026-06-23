@@ -7,8 +7,15 @@
     "build": "webpack --config webpack.prod.js",
     "lint": "eslint --cache --ext .js,.jsx src/",
     "develop": "rm -rf dist/* && cross-env NODE_ENV=development nodemon --watch src src/server/server.js",
+    "vercel-build": "node scripts/prepare-vercel-public.js",
     "start": "cross-env NODE_ENV=production node src/server/server.js",
     "test": "jest && node test/engine.smoke.mjs"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "modulePathIgnorePatterns": [
+      "<rootDir>/.vercel/output"
+    ]
   },
   "author": "Souradip Mookerjee",
   "license": "MIT",

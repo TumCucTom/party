@@ -39,6 +39,67 @@ html, body {
 
 .hidden { display: none !important; }
 
+/* ======================= mobile orientation gate ======================= */
+
+#orientation-lock {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  color: var(--hud-text);
+  background:
+    linear-gradient(180deg, rgba(13, 16, 18, 0.94), rgba(13, 16, 18, 0.82)),
+    radial-gradient(circle at 50% 40%, rgba(127,183,180,0.18), transparent 42%);
+  pointer-events: auto;
+}
+.orientation-card {
+  width: min(320px, 82vw);
+  border: 1px solid var(--hud-line);
+  border-top: 2px solid var(--hud-brass);
+  background: var(--hud-bg-strong);
+  box-shadow: 0 18px 42px rgba(0,0,0,0.52);
+  padding: 18px 20px 20px;
+  text-align: center;
+}
+.orientation-phone {
+  width: 82px;
+  height: 46px;
+  margin: 0 auto 12px;
+  border: 3px solid var(--hud-social);
+  border-radius: 8px;
+  box-shadow: 0 0 0 1px rgba(242,244,243,0.2), 0 0 22px rgba(127,183,180,0.28);
+}
+.orientation-phone::after {
+  content: '';
+  display: block;
+  width: 5px;
+  height: 5px;
+  margin: 18px 6px 0 auto;
+  border-radius: 50%;
+  background: var(--hud-brass);
+}
+.orientation-title {
+  font-family: var(--display-font);
+  font-size: 24px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+.orientation-copy {
+  margin-top: 6px;
+  color: var(--hud-muted);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+@media (pointer: coarse) and (orientation: portrait) {
+  body.touch #orientation-lock {
+    display: flex;
+  }
+}
+
 /* ======================= overlays ======================= */
 
 .overlay {
@@ -791,14 +852,24 @@ body.touch .touch-only { display: flex !important; }
    cluster owns the bottom-right corner), chat bar avoids the
    on-screen keyboard by docking to the top */
 body.touch #self-view {
-  top: 60px;
+  top: calc(env(safe-area-inset-top) + 60px);
   left: 10px;
   right: auto;
   bottom: auto;
-  width: 96px;
+  width: 92px;
 }
-body.touch #self-video { height: 72px; }
-body.touch #room-status { font-size: 15px; max-width: 46vw; padding: 2px 6px; }
+body.touch #self-video { height: 64px; }
+body.touch #room-status {
+  top: calc(env(safe-area-inset-top) + 8px);
+  right: 10px;
+  max-width: calc(100vw - 188px);
+  padding: 4px 7px;
+  font-size: 11px;
+  line-height: 1.1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 body.touch #hotbar { display: none; }
 body.touch #chat-bar { bottom: auto; top: 64px; }
 body.touch #debug { top: 104px; }
@@ -845,6 +916,113 @@ body.touch #debug { top: 104px; }
   .splash { margin-left: 120px; font-size: 20px; }
 }
 
+body.touch #combat-hud {
+  top: calc(env(safe-area-inset-top) + 56px);
+  bottom: auto;
+  left: 112px;
+  right: 10px;
+  grid-template-columns: minmax(92px, 116px) minmax(150px, 1fr);
+  justify-content: stretch;
+  align-items: start;
+  gap: 6px;
+}
+body.touch #combat-health { order: 1; }
+body.touch #weapon-panel { order: 2; }
+body.touch #score-panel { display: none; }
+body.touch #combat-hud .combat-panel {
+  padding: 5px 7px;
+  min-height: 0;
+  border-top-width: 1px;
+}
+body.touch #combat-hud .combat-label,
+body.touch #combat-hud .weapon-title,
+body.touch #combat-state {
+  display: none;
+}
+body.touch #combat-health-value {
+  font-size: 20px;
+  line-height: 1;
+}
+body.touch #combat-hud .health-row {
+  grid-template-columns: 32px 1fr;
+  gap: 5px;
+}
+body.touch #combat-hud .health-track,
+body.touch #combat-hud .cooldown-track {
+  height: 6px;
+}
+body.touch #combat-hud .cooldown-row {
+  grid-template-columns: 38px 1fr;
+  gap: 5px;
+  margin-top: 3px;
+  font-size: 10px;
+}
+
+@media (max-width: 360px) {
+  body.touch #self-view {
+    width: 76px;
+  }
+  body.touch #combat-hud {
+    left: 92px;
+    right: 8px;
+  }
+  body.touch #combat-hud .cooldown-row span {
+    display: none;
+  }
+  body.touch #combat-hud .cooldown-row {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (pointer: coarse) and (orientation: landscape) and (max-height: 520px) {
+  body.touch #combat-hud {
+    top: calc(env(safe-area-inset-top) + 8px);
+    left: calc(env(safe-area-inset-left) + 170px);
+    right: calc(env(safe-area-inset-right) + 150px);
+  }
+  body.touch #room-status {
+    top: calc(env(safe-area-inset-top) + 54px);
+    right: calc(env(safe-area-inset-right) + 10px);
+    max-width: 220px;
+  }
+  body.touch #self-view {
+    top: calc(env(safe-area-inset-top) + 58px);
+    left: calc(env(safe-area-inset-left) + 10px);
+    width: 86px;
+  }
+  body.touch #self-video {
+    height: 58px;
+  }
+  body.touch #minimap {
+    top: calc(env(safe-area-inset-top) + 82px);
+    right: calc(env(safe-area-inset-right) + 10px);
+    width: 84px;
+    height: 84px;
+  }
+  #touch-stick {
+    left: calc(env(safe-area-inset-left) + 18px);
+    bottom: calc(env(safe-area-inset-bottom) + 28px);
+    width: 112px;
+    height: 112px;
+  }
+  #touch-jump {
+    right: calc(env(safe-area-inset-right) + 22px);
+    bottom: calc(env(safe-area-inset-bottom) + 68px);
+  }
+  #touch-sneak {
+    right: calc(env(safe-area-inset-right) + 30px);
+    bottom: calc(env(safe-area-inset-bottom) + 8px);
+  }
+  #touch-mine {
+    right: calc(env(safe-area-inset-right) + 104px);
+    bottom: calc(env(safe-area-inset-bottom) + 132px);
+  }
+  #touch-place {
+    right: calc(env(safe-area-inset-right) + 118px);
+    bottom: calc(env(safe-area-inset-bottom) + 38px);
+  }
+}
+
 /* ======================= minimap & room preview ======================= */
 
 #minimap {
@@ -859,9 +1037,9 @@ body.touch #debug { top: 104px; }
   image-rendering: auto;
 }
 body.touch #minimap {
-  top: 40px;
-  width: 110px;
-  height: 110px;
+  top: calc(env(safe-area-inset-top) + 106px);
+  width: 92px;
+  height: 92px;
 }
 
 #room-info {

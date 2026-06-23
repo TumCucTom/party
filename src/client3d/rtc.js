@@ -17,7 +17,13 @@ const PEER_PREFIX = 'w3-';
 
 const ICE_SERVERS = [
   { urls: 'stun:stun.l.google.com:19302' },
+  { urls: 'turn:0.peerjs.com:3478', username: 'peerjs', credential: 'peerjsp' },
 ];
+
+export const RTC_CONFIG = {
+  iceServers: ICE_SERVERS,
+  sdpSemantics: 'unified-plan',
+};
 
 // flaky-connection recovery: a dial that hasn't produced a media stream
 // after this long is abandoned, so the next proximity tick redials
@@ -59,7 +65,7 @@ export class Rtc {
     this.myId = myId;
     this.myStream = stream || this._dummyStream();
     this.peer = new window.Peer(PEER_PREFIX + myId, {
-      config: { iceServers: ICE_SERVERS },
+      config: RTC_CONFIG,
     });
     this.peer.on('call', (call) => {
       if (call.metadata && call.metadata.type === 'screen') {

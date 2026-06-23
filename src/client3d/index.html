@@ -25,6 +25,13 @@
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="orientation-lock" role="dialog" aria-live="polite" aria-label="Rotate phone">
+  <div class="orientation-card">
+    <div class="orientation-phone" aria-hidden="true"></div>
+    <div class="orientation-title">Turn phone sideways</div>
+    <div class="orientation-copy">Landscape keeps the camera, HUD, and touch controls clear.</div>
+  </div>
+</div>
 
 <!-- ======================= HUD (in game) ======================= -->
 <div id="hud" class="hidden">
@@ -165,8 +172,6 @@
       <span>Jump</span><span>SPACE</span>
       <span>Crouch / slow walk</span><span>SHIFT</span>
       <span>Sprint</span><span>CTRL or double-tap W</span>
-      <span>Freecam toggle</span><span>Double-tap SPACE</span>
-      <span>Freecam up / down</span><span>SPACE / SHIFT</span>
       <span>Debug info</span><span>F3</span>
       <span>Menu</span><span>ESC</span>
     </div>

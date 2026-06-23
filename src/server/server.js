@@ -1,4 +1,5 @@
 const fs = require('fs');
+const http = require('http');
 const path = require('path');
 const express = require('express');
 const socketio = require('socket.io');
@@ -51,10 +52,7 @@ if (process.env.NODE_ENV === 'development') {
   app.use(express.static('dist'));
 }
 
-// Listen on port
-const port = process.env.PORT || 3000;
-const server = app.listen(port);
-console.log(`Server listening on port ${port}`);
+const server = http.createServer(app);
 
 // Setup socket.io
 const io = socketio(server);
@@ -63,7 +61,7 @@ const io = socketio(server);
 // Worlds persist to disk so builds survive restarts (override the
 // location with WORLD3D_FILE, e.g. a mounted volume in docker).
 const world3dFile = process.env.WORLD3D_FILE ||
-  path.join(__dirname, '../../data/world3d.json');
+  (process.env.VERCEL ? null : path.join(__dirname, '../../data/world3d.json'));
 const game = new Game();
 const world3d = new World3D(io, { file: world3dFile });
 
@@ -118,3 +116,20 @@ app.get('/photo/:id', (req, res) => {
     res.sendStatus(404);
   }
 });
+
+function start(port = process.env.PORT || 3000) {
+  if (server.listening) return server;
+  server.listen(port, () => {
+    console.log(`Server listening on port ${port}`);
+  });
+  return server;
+}
+
+if (require.main === module) {
+  start();
+}
+
+module.exports = server;
+module.exports.app = app;
+module.exports.io = io;
+module.exports.start = start;

@@ -16,8 +16,7 @@ const STICK_RADIUS = 46; // px of nub travel
 
 export class TouchControls {
   /**
-   * @param {object} h handlers: onLook(dx,dy), onToggleFly(),
-   *                   onMenu(), onChat(), onPicker()
+   * @param {object} h handlers: onLook(dx,dy), onMenu(), onChat(), onPicker()
    */
   constructor(h) {
     this.h = h;
@@ -34,7 +33,6 @@ export class TouchControls {
     this._lookId = null;  // touch identifier owning the camera
     this._lookX = 0;
     this._lookY = 0;
-    this._lastJumpTap = 0;
 
     this._build();
     this._bind();
@@ -74,11 +72,7 @@ export class TouchControls {
     document.body.appendChild(this.stick);
 
     // action cluster (bottom right)
-    this._button('touch-jump', '⤒', 'jump', () => {
-      const now = performance.now();
-      if (now - this._lastJumpTap < 320) this.h.onToggleFly?.();
-      this._lastJumpTap = now;
-    });
+    this._button('touch-jump', '⤒', 'jump');
     this._button('touch-sneak', '⤓', 'sneak');
     this._button('touch-mine', '⛏', 'mine');
     this._button('touch-place', '▣', 'place');

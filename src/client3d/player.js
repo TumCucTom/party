@@ -21,7 +21,7 @@ const TERMINAL = 72;
 const EPS = 0.001;
 
 const SPEED_WALK = 4.317;
-const SPEED_SPRINT = 5.612;
+const SPEED_SPRINT = 8.0;
 const SPEED_SNEAK = 1.31;
 const SPEED_FLY = 10.9;
 const SPEED_FLY_SPRINT = 19;

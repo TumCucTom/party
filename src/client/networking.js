@@ -8,7 +8,10 @@ const Constants = require('../shared/constants');
 let clientId = '';
 
 const socketProtocol = (window.location.protocol.includes('https')) ? 'wss' : 'ws';
-const socket = io(`${socketProtocol}://${window.location.host}`, { reconnection: false });
+const socket = io(`${socketProtocol}://${window.location.host}`, {
+  reconnection: false,
+  transports: ['websocket'],
+});
 
 const connectedPromise = new Promise(resolve => {
   socket.on('connect', () => {
