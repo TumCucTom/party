@@ -24,6 +24,7 @@ module.exports = Object.freeze({
     BLOCK: 'w3:block',
     TNT: 'w3:tnt',
     CHAT: 'w3:chat',
+    FACE: 'w3:face',
     ATTACK: 'w3:attack',
     HIT: 'w3:hit',
     DEATH: 'w3:death',

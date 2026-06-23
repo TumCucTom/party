@@ -42,6 +42,9 @@ const SETTINGS_KEY = 'party3d:settings';
 const HOTBAR_KEY = 'party3d:hotbar';
 const NAME_KEY = 'party3d:name';
 const REACH = 5;
+const FACE_FALLBACK_W = 160;
+const FACE_FALLBACK_H = 120;
+const FACE_FALLBACK_QUALITY = 0.45;
 
 const DEFAULT_SETTINGS = {
   render: 7, fov: 70, sens: 100, vol: 70,
@@ -171,6 +174,11 @@ class Game {
     this.net = new Net();
     this.rtc = null;             // created after join (needs the AudioContext)
     this.localStream = null;     // cam + mic, requested below
+    this.selfVideo = null;
+    this.faceFallbackCanvas = document.createElement('canvas');
+    this.faceFallbackCanvas.width = FACE_FALLBACK_W;
+    this.faceFallbackCanvas.height = FACE_FALLBACK_H;
+    this.faceFallbackCtx = this.faceFallbackCanvas.getContext('2d');
     this.room = 'public';
     this.joining = false;
     this.stateSendTimer = 0;
@@ -290,6 +298,7 @@ class Game {
   async initMedia() {
     const joinCam = document.getElementById('join-cam');
     const selfVideo = document.getElementById('self-video');
+    this.selfVideo = selfVideo;
     try {
       this.localStream = await navigator.mediaDevices.getUserMedia({
         video: { width: { ideal: 320 }, height: { ideal: 240 } },
@@ -457,6 +466,7 @@ class Game {
     };
 
     this.net.onChat = ({ id, text }) => this.avatars.setChat(id, text);
+    this.net.onFaceFrame = ({ id, image }) => this.avatars.setFaceFrame(id, image);
 
     this.net.onHit = (event) => {
       applyHit(this.combat, event, this.net.id);
@@ -575,6 +585,23 @@ class Game {
     this.net.sendState(s);
   }
 
+  sendFaceFallback(dt, nearby) {
+    void dt; // throttled by the 0.5s proximity tick that calls this method
+    if (!nearby || !this.net.socket?.connected) return;
+    const track = this.localStream?.getVideoTracks()[0];
+    if (!track || !track.enabled || track.readyState !== 'live') return;
+    const video = this.selfVideo || document.getElementById('self-video');
+    if (!video || video.readyState < 2 || !video.videoWidth || !video.videoHeight) return;
+    if (!this.faceFallbackCtx) return;
+    try {
+      this.faceFallbackCtx.drawImage(video, 0, 0, FACE_FALLBACK_W, FACE_FALLBACK_H);
+      const image = this.faceFallbackCanvas.toDataURL('image/jpeg', FACE_FALLBACK_QUALITY);
+      this.net.sendFaceFrame(image);
+    } catch (err) {
+      console.warn('[face-fallback]', err);
+    }
+  }
+
   updateMultiplayer(dt) {
     this.avatars.update(dt);
 
@@ -590,6 +617,7 @@ class Game {
       const others = this.avatars.byDistance(this.player.pos);
       this.rtc?.updateProximity(others);
       const nearby = others.filter((o) => o.distance < CALL_DISTANCE).length;
+      this.sendFaceFallback(dt, nearby);
       const total = this.avatars.count() + 1;
       let hint = '';
       if (nearby) hint = ` · ${nearby} in earshot`;

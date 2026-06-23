@@ -194,6 +194,41 @@ describe('text chat', () => {
   });
 });
 
+describe('face frame relay', () => {
+  test('bounded jpeg frames relay only to the sender room with sender id', () => {
+    const w = makeWorld();
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'r', name: 'A' });
+
+    const image = `data:image/jpeg;base64,${'a'.repeat(120)}`;
+    w.face(s1, { image });
+
+    expect(s1.broadcast).toContainEqual(['w3/r', MSG.FACE, { id: 'aaa', image }]);
+    expect(s1.emitted.filter(e => e[0] === MSG.FACE)).toHaveLength(0);
+  });
+
+  test('malformed, oversized and rapid face frames are dropped', () => {
+    let now = 1000;
+    const nowSpy = jest.spyOn(Date, 'now').mockImplementation(() => now);
+    const w = makeWorld();
+    const s1 = mockSocket('aaa');
+    w.join(s1, { room: 'r', name: 'A' });
+
+    w.face(s1, { image: 'not an image' });
+    w.face(s1, { image: `data:image/jpeg;base64,${'a'.repeat(50000)}` });
+    expect(s1.broadcast.filter(b => b[1] === MSG.FACE)).toHaveLength(0);
+
+    w.face(s1, { image: `data:image/jpeg;base64,${'a'.repeat(120)}` });
+    w.face(s1, { image: `data:image/jpeg;base64,${'b'.repeat(120)}` });
+    expect(s1.broadcast.filter(b => b[1] === MSG.FACE)).toHaveLength(1);
+
+    now += 600;
+    w.face(s1, { image: `data:image/jpeg;base64,${'c'.repeat(120)}` });
+    expect(s1.broadcast.filter(b => b[1] === MSG.FACE)).toHaveLength(2);
+    nowSpy.mockRestore();
+  });
+});
+
 describe('persistence & room info', () => {
   test('worlds survive a restart via the save file', () => {
     const file = path.join(os.tmpdir(), `w3d-test-${Date.now()}-${Math.random()}.json`);

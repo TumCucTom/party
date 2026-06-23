@@ -18,6 +18,9 @@ const COMBAT = Constants.COMBAT_3D;
 const DAY_LENGTH = 1200;        // seconds per in-game day (kept in sync by clients)
 const MAX_EDITS_PER_ROOM = 250000;
 const MAX_PLAYERS_PER_ROOM = 40;
+const FACE_FRAME_MIN_MS = 450;
+const MAX_FACE_FRAME_CHARS = 40000;
+const FACE_FRAME_RE = /^data:image\/jpe?g;base64,[A-Za-z0-9+/=]+$/;
 
 /** FNV-1a — must match hashString in src/client3d/noise.js. */
 function hashString(str) {
@@ -226,6 +229,7 @@ class World3D {
     socket.on(MSG.BLOCK, (msg) => this.block(socket, msg || {}));
     socket.on(MSG.TNT, (msg) => this.tnt(socket, msg || {}));
     socket.on(MSG.CHAT, (msg) => this.chat(socket, msg || {}));
+    socket.on(MSG.FACE, (msg) => this.face(socket, msg || {}));
     socket.on(MSG.ATTACK, (msg) => this.attack(socket, msg || {}));
     socket.on('disconnect', () => this.leave(socket));
   }
@@ -313,6 +317,19 @@ class World3D {
     if (p.lastChatAt && now - p.lastChatAt < 750) return; // rate limit
     p.lastChatAt = now;
     socket.to(r.channel()).emit(MSG.CHAT, { id: socket.id, text: clean });
+  }
+
+  face(socket, { image }) {
+    const r = this.roomOf(socket);
+    if (!r) return;
+    const p = r.players.get(socket.id);
+    if (!p) return;
+    if (typeof image !== 'string') return;
+    if (image.length > MAX_FACE_FRAME_CHARS || !FACE_FRAME_RE.test(image)) return;
+    const now = Date.now();
+    if (p.lastFaceFrameAt && now - p.lastFaceFrameAt < FACE_FRAME_MIN_MS) return;
+    p.lastFaceFrameAt = now;
+    socket.to(r.channel()).emit(MSG.FACE, { id: socket.id, image });
   }
 
   attack(socket, { kind }) {

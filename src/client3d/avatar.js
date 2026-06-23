@@ -223,6 +223,10 @@ class Avatar {
     this._first = true;
 
     this.videoTex = null;
+    this.fallbackCanvas = null;
+    this.fallbackCtx = null;
+    this.fallbackTex = null;
+    this._fallbackSeq = 0;
   }
 
   setState(s) {
@@ -258,11 +262,39 @@ class Avatar {
     this.faceMat.needsUpdate = true;
   }
 
+  setFaceFrame(image) {
+    if (typeof image !== 'string' || !image.startsWith('data:image/jpeg;base64,')) return;
+    if (!this.fallbackCanvas) {
+      this.fallbackCanvas = document.createElement('canvas');
+      this.fallbackCanvas.width = 160;
+      this.fallbackCanvas.height = 120;
+      this.fallbackCtx = this.fallbackCanvas.getContext('2d');
+      this.fallbackTex = new THREE.CanvasTexture(this.fallbackCanvas);
+      this.fallbackTex.colorSpace = THREE.SRGBColorSpace;
+      this.fallbackTex.generateMipmaps = false;
+      this.fallbackTex.minFilter = THREE.LinearFilter;
+      this.fallbackTex.magFilter = THREE.LinearFilter;
+    }
+    const seq = ++this._fallbackSeq;
+    const img = new Image();
+    img.onload = () => {
+      if (seq !== this._fallbackSeq || !this.fallbackCtx) return;
+      this.fallbackCtx.drawImage(img, 0, 0, this.fallbackCanvas.width, this.fallbackCanvas.height);
+      this.fallbackTex.needsUpdate = true;
+      if (!this.videoTex) {
+        this.faceMat.map = this.fallbackTex;
+        this.faceMat.side = THREE.DoubleSide;
+        this.faceMat.needsUpdate = true;
+      }
+    };
+    img.src = image;
+  }
+
   clearVideo() {
     if (!this.videoTex) return;
     this.videoTex.dispose();
     this.videoTex = null;
-    this.faceMat.map = this.faceTex;
+    this.faceMat.map = this.fallbackTex || this.faceTex;
     this.faceMat.needsUpdate = true;
   }
 
@@ -379,6 +411,8 @@ class Avatar {
 
   dispose() {
     this.clearVideo();
+    this.fallbackTex?.dispose();
+    this.fallbackTex = null;
     this.clearChat();
     this.clearScreen();
     this.group.parent?.remove(this.group);
@@ -412,6 +446,7 @@ export class Avatars {
   }
 
   setVideo(id, videoEl) { this.map.get(id)?.setVideo(videoEl); }
+  setFaceFrame(id, image) { this.map.get(id)?.setFaceFrame(image); }
   clearVideo(id) { this.map.get(id)?.clearVideo(); }
   setChat(id, text) { this.map.get(id)?.setChat(text); }
   setCombatState(id, state) { this.map.get(id)?.setCombatState(state); }

@@ -35,6 +35,9 @@ const mainJs = readFileSync(new URL('../src/client3d/main.js', import.meta.url),
 const touchJs = readFileSync(new URL('../src/client3d/touch.js', import.meta.url), 'utf8');
 const rtcJs = readFileSync(new URL('../src/client3d/rtc.js', import.meta.url), 'utf8');
 const avatarJs = readFileSync(new URL('../src/client3d/avatar.js', import.meta.url), 'utf8');
+const netJs = readFileSync(new URL('../src/client3d/net.js', import.meta.url), 'utf8');
+const clientConstantsJs = readFileSync(new URL('../src/client3d/constants.js', import.meta.url), 'utf8');
+const sharedConstantsJs = readFileSync(new URL('../src/shared/constants.js', import.meta.url), 'utf8');
 const clientHtml = readFileSync(new URL('../src/client3d/index.html', import.meta.url), 'utf8');
 
 let passed = 0;
@@ -228,6 +231,17 @@ ok('remote webcam videos are prepared for mobile WebGL textures', () => {
   assert.match(rtcJs, /ensureVideoPlayback\(video\)/);
   assert.match(avatarJs, /new THREE\.MeshBasicMaterial\(\{[^}]*side:\s*THREE\.DoubleSide/s);
   assert.match(avatarJs, /tex\.needsUpdate\s*=\s*true/);
+});
+
+ok('socket face-frame fallback is wired for stalled mobile WebRTC video', () => {
+  assert.match(clientConstantsJs, /FACE:\s*'w3:face'/);
+  assert.match(sharedConstantsJs, /FACE:\s*'w3:face'/);
+  assert.match(netJs, /onFaceFrame/);
+  assert.match(netJs, /sendFaceFrame\(image\)/);
+  assert.match(mainJs, /sendFaceFallback\(dt,\s*nearby\)/);
+  assert.match(mainJs, /this\.net\.onFaceFrame\s*=\s*\(\{ id,\s*image \}\)\s*=>\s*this\.avatars\.setFaceFrame\(id,\s*image\)/);
+  assert.match(avatarJs, /setFaceFrame\(image\)/);
+  assert.match(avatarJs, /fallbackTex/);
 });
 
 
