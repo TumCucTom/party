@@ -137,7 +137,7 @@ class Avatar {
     const faceTex = new THREE.CanvasTexture(faceCanvas(hue, this.name));
     faceTex.colorSpace = THREE.SRGBColorSpace;
     this.faceTex = faceTex;
-    this.faceMat = new THREE.MeshBasicMaterial({ map: faceTex });
+    this.faceMat = new THREE.MeshBasicMaterial({ map: faceTex, side: THREE.DoubleSide });
     // front of the avatar is -Z (matches the engine's yaw convention)
     this.face = new THREE.Mesh(new THREE.PlaneGeometry(HEAD * 0.78, HEAD * 0.56), this.faceMat);
     this.face.position.set(0, -HEAD * 0.02, -(HEAD * 0.48 + 0.006));
@@ -248,8 +248,13 @@ class Avatar {
     this.clearVideo();
     const tex = new THREE.VideoTexture(videoEl);
     tex.colorSpace = THREE.SRGBColorSpace;
+    tex.generateMipmaps = false;
+    tex.minFilter = THREE.LinearFilter;
+    tex.magFilter = THREE.LinearFilter;
+    tex.needsUpdate = true;
     this.videoTex = tex;
     this.faceMat.map = tex;
+    this.faceMat.side = THREE.DoubleSide;
     this.faceMat.needsUpdate = true;
   }
 

@@ -33,6 +33,8 @@ const fakeMaterials = { solid: {}, water: {} };
 const styleCss = readFileSync(new URL('../src/client3d/style.css', import.meta.url), 'utf8');
 const mainJs = readFileSync(new URL('../src/client3d/main.js', import.meta.url), 'utf8');
 const touchJs = readFileSync(new URL('../src/client3d/touch.js', import.meta.url), 'utf8');
+const rtcJs = readFileSync(new URL('../src/client3d/rtc.js', import.meta.url), 'utf8');
+const avatarJs = readFileSync(new URL('../src/client3d/avatar.js', import.meta.url), 'utf8');
 const clientHtml = readFileSync(new URL('../src/client3d/index.html', import.meta.url), 'utf8');
 
 let passed = 0;
@@ -218,6 +220,14 @@ ok('WebRTC config includes a TURN relay for restrictive networks', () => {
     servers.some((server) => String(server.urls || server.url || '').startsWith('turn:')),
     'expected at least one TURN relay',
   );
+});
+
+ok('remote webcam videos are prepared for mobile WebGL textures', () => {
+  assert.match(rtcJs, /webkit-playsinline/);
+  assert.match(rtcJs, /video\.style\.cssText\s*=\s*'[^']*width:\s*160px[^']*height:\s*120px/s);
+  assert.match(rtcJs, /ensureVideoPlayback\(video\)/);
+  assert.match(avatarJs, /new THREE\.MeshBasicMaterial\(\{[^}]*side:\s*THREE\.DoubleSide/s);
+  assert.match(avatarJs, /tex\.needsUpdate\s*=\s*true/);
 });
 
 

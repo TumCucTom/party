@@ -29,6 +29,28 @@ export const RTC_CONFIG = {
 // after this long is abandoned, so the next proximity tick redials
 const DIAL_RETRY_MS = 8000;
 
+function makeRemoteVideo(stream) {
+  const video = document.createElement('video');
+  video.muted = true;
+  video.defaultMuted = true;
+  video.autoplay = true;
+  video.playsInline = true;
+  video.setAttribute('autoplay', '');
+  video.setAttribute('muted', '');
+  video.setAttribute('playsinline', '');
+  video.setAttribute('webkit-playsinline', '');
+  video.style.cssText = 'width:160px;height:120px;object-fit:cover;';
+  video.srcObject = stream;
+  return video;
+}
+
+function ensureVideoPlayback(video) {
+  const play = () => video.play().catch(() => {});
+  video.addEventListener('loadedmetadata', play, { once: true });
+  video.addEventListener('canplay', play, { once: true });
+  play();
+}
+
 export class Rtc {
   /** @param {AudioContext} ctx shared game AudioContext (already resumed) */
   constructor(ctx) {
@@ -49,9 +71,19 @@ export class Rtc {
     this.voiceGain.gain.value = 1;
     this.voiceGain.connect(ctx.destination);
 
-    // hidden holder so remote <video> elements live in the DOM
+    // Off-screen holder so remote <video> elements stay live in the DOM.
+    // Mobile browsers can stall WebGL VideoTexture sources that are 0x0.
     this.mediaHolder = document.createElement('div');
-    this.mediaHolder.style.cssText = 'position:fixed;width:0;height:0;overflow:hidden;';
+    this.mediaHolder.style.cssText = [
+      'position:fixed',
+      'left:-10000px',
+      'top:0',
+      'width:1px',
+      'height:1px',
+      'overflow:hidden',
+      'opacity:0',
+      'pointer-events:none',
+    ].join(';');
     document.body.appendChild(this.mediaHolder);
 
     this.onVideo = null;     // (socketId, videoElement)
@@ -117,14 +149,9 @@ export class Rtc {
       if (!entry || entry.call !== call || entry.video) return;
 
       // video element: muted — audio goes through the spatial graph below
-      const video = document.createElement('video');
-      video.muted = true;
-      video.autoplay = true;
-      video.playsInline = true;
-      video.setAttribute('playsinline', '');
-      video.srcObject = remote;
+      const video = makeRemoteVideo(remote);
       this.mediaHolder.appendChild(video);
-      video.play().catch(() => {});
+      ensureVideoPlayback(video);
       entry.video = video;
 
       if (remote.getAudioTracks().length) {
@@ -290,14 +317,9 @@ export class Rtc {
 
     call.on('stream', (remote) => {
       if (this.remoteScreens.get(id) !== entry || entry.video) return;
-      const video = document.createElement('video');
-      video.muted = true;
-      video.autoplay = true;
-      video.playsInline = true;
-      video.setAttribute('playsinline', '');
-      video.srcObject = remote;
+      const video = makeRemoteVideo(remote);
       this.mediaHolder.appendChild(video);
-      video.play().catch(() => {});
+      ensureVideoPlayback(video);
       entry.video = video;
       this.onScreen?.(id, video);
     });
